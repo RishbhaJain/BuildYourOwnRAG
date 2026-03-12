@@ -1,8 +1,10 @@
 # Virtual environment
 .venv/
 
-# Crawled data (large, not source code)
-data/
+# Crawled data (large, not source code) — ignore contents but not the directory
+data/**
+# Keep the final cleaned corpus
+!data/corpus_combined.jsonl
 
 # Logs
 *.log
