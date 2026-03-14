@@ -84,14 +84,21 @@ def main():
         ref = ref_answers[str(i)]
         pred = predictions[i]
 
-        em = exact_match(pred, ref)
-        f1 = token_f1(pred, ref)
+        # Support multiple ground truth answers (take max score per SQuAD eval)
+        if isinstance(ref, list):
+            em = max(exact_match(pred, r) for r in ref)
+            f1 = max(token_f1(pred, r) for r in ref)
+            ref_display_str = ref[0]
+        else:
+            em = exact_match(pred, ref)
+            f1 = token_f1(pred, ref)
+            ref_display_str = ref
         em_scores.append(em)
         f1_scores.append(f1)
 
         # truncate display strings
         pred_display = pred[:38] + ".." if len(pred) > 40 else pred
-        ref_display = ref[:38] + ".." if len(ref) > 40 else ref
+        ref_display = ref_display_str[:38] + ".." if len(ref_display_str) > 40 else ref_display_str
 
         print(f"{i:>3}  {em:>4.0f}  {f1:>6.3f}  {pred_display:<40}  {ref_display:<40}")
 
