@@ -36,6 +36,17 @@ EXTRACTOR = "resiliparse"
 # Pages with fewer extracted characters than this are discarded
 MIN_CONTENT_LENGTH = 100
 
+# Chunker
+CHUNK_SIZE = 100
+
+# Retriever
+BM25_TOP_K = 5
+
+# Generator
+LLM_MODEL = "meta-llama/llama-3.1-8b-instruct"
+OPENROUTER_API_KEY = ""  # set via environment variable OPENROUTER_API_KEY
+MAX_NEW_TOKENS = 128
+
 RAW_PAGES_DIR = "data/raw_pages"
 CORPUS_JSONL_PATH = "data/corpus.jsonl"
 CORPUS_COMBINED_PATH = "data/corpus_combined.jsonl"
