@@ -3,11 +3,11 @@ robots.txt fetching and caching.
 One robots.txt fetch per domain, cached for the lifetime of the crawl.
 """
 
-from io import StringIO
 from urllib.parse import urlparse, urljoin
 from urllib.robotparser import RobotFileParser
+import urllib.request
+import urllib.error
 import logging
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +36,19 @@ class RobotsCache:
         Returns the normalized content, or None on fetch failure.
         """
         try:
-            resp = requests.get(robots_url, timeout=10, headers={"User-Agent": self._user_agent})
-            if resp.status_code != 200:
-                return None
-            lines = resp.text.splitlines()
+            req = urllib.request.Request(
+                robots_url, headers={"User-Agent": self._user_agent}
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                charset = resp.headers.get_content_charset() or "utf-8"
+                text = resp.read().decode(charset, errors="replace")
+            lines = text.splitlines()
             # Drop all lines before the first "User-agent:" directive
             for i, line in enumerate(lines):
                 if line.strip().lower().startswith("user-agent:"):
                     return "\n".join(lines[i:])
             # No User-agent line found — return as-is (parser will allow-all)
-            return resp.text
+            return text
         except Exception:
             return None
 

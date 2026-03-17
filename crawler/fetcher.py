@@ -4,10 +4,11 @@ HTTP fetcher with per-domain rate limiting, retry, and redirect handling.
 
 import time
 import logging
+import socket
+import urllib.request
+import urllib.error
 from dataclasses import dataclass
 from urllib.parse import urlparse
-
-import requests
 
 from crawler.robots import RobotsCache
 import config
@@ -31,7 +32,7 @@ class Fetcher:
     - Per-domain rate limiting (respects robots.txt Crawl-delay or config default)
     - Exponential backoff retries on transient errors
     - Content-Type enforcement (only stores text/html responses)
-    - Redirect following (requests built-in)
+    - Redirect following (urllib built-in)
     """
 
     def __init__(
@@ -42,8 +43,7 @@ class Fetcher:
         max_retries: int = config.MAX_RETRIES,
         backoff_base: float = config.RETRY_BACKOFF_BASE,
     ) -> None:
-        self._session = requests.Session()
-        self._session.headers.update({"User-Agent": user_agent})
+        self._user_agent = user_agent
         self._timeout = timeout
         self._crawl_delay = crawl_delay
         self._max_retries = max_retries
@@ -79,54 +79,91 @@ class Fetcher:
 
         for attempt in range(self._max_retries):
             try:
-                response = self._session.get(
-                    url,
-                    timeout=self._timeout,
-                    allow_redirects=True,
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": self._user_agent}
                 )
+                with urllib.request.urlopen(req, timeout=self._timeout) as response:
+                    final_url = response.url
+                    status_code = response.status
+                    content_type = response.headers.get("Content-Type", "")
 
-                # Handle 429 Too Many Requests explicitly
-                if response.status_code == 429:
+                    if "text/html" not in content_type:
+                        return FetchResult(
+                            url=final_url, original_url=url,
+                            status_code=status_code,
+                            content_type=content_type,
+                            html=None,
+                            error=f"Non-HTML content-type: {content_type}",
+                        )
+
+                    charset = response.headers.get_content_charset() or "utf-8"
+                    html = response.read().decode(charset, errors="replace")
+                    return FetchResult(
+                        url=final_url,
+                        original_url=url,
+                        status_code=status_code,
+                        content_type=content_type,
+                        html=html,
+                        error=None,
+                    )
+
+            except urllib.error.HTTPError as e:
+                # Handle 429 Too Many Requests
+                if e.code == 429:
                     retry_after = float(
-                        response.headers.get("Retry-After", self._crawl_delay * (self._backoff_base ** attempt))
+                        e.headers.get("Retry-After") or
+                        self._crawl_delay * (self._backoff_base ** attempt)
                     )
                     logger.warning("429 on %s — waiting %.1fs", url, retry_after)
                     time.sleep(retry_after)
                     continue
 
-                content_type = response.headers.get("Content-Type", "")
-
-                if "text/html" not in content_type:
+                # Redirect loop exhausted
+                if 300 <= e.code < 400:
                     return FetchResult(
-                        url=response.url, original_url=url,
-                        status_code=response.status_code,
-                        content_type=content_type,
-                        html=None,
-                        error=f"Non-HTML content-type: {content_type}",
+                        url=url, original_url=url, status_code=-1,
+                        content_type="", html=None, error="Too many redirects",
                     )
 
+                # Try to return HTML error body (e.g. 404 page)
+                content_type = e.headers.get("Content-Type", "") if e.headers else ""
+                if "text/html" in content_type:
+                    try:
+                        charset = (
+                            (e.headers.get_content_charset() or "utf-8")
+                            if e.headers else "utf-8"
+                        )
+                        html = e.read().decode(charset, errors="replace")
+                        return FetchResult(
+                            url=url, original_url=url, status_code=e.code,
+                            content_type=content_type, html=html, error=None,
+                        )
+                    except Exception:
+                        pass
+
                 return FetchResult(
-                    url=response.url,           # Post-redirect canonical URL
-                    original_url=url,
-                    status_code=response.status_code,
-                    content_type=content_type,
-                    html=response.text,         # requests decodes charset from headers
-                    error=None,
+                    url=url, original_url=url, status_code=e.code,
+                    content_type=content_type, html=None,
+                    error=f"HTTP error: {e.code}",
                 )
 
-            except requests.Timeout:
-                logger.warning("Timeout on %s (attempt %d/%d)", url, attempt + 1, self._max_retries)
-                if attempt < self._max_retries - 1:
-                    time.sleep(self._backoff_base ** attempt)
+            except urllib.error.URLError as e:
+                reason = e.reason
+                if isinstance(reason, (socket.timeout, TimeoutError)) or (
+                    isinstance(reason, OSError) and "timed out" in str(reason).lower()
+                ):
+                    logger.warning(
+                        "Timeout on %s (attempt %d/%d)", url, attempt + 1, self._max_retries
+                    )
+                    if attempt < self._max_retries - 1:
+                        time.sleep(self._backoff_base ** attempt)
+                else:
+                    logger.warning("Request error on %s: %s", url, e)
+                    if attempt < self._max_retries - 1:
+                        time.sleep(self._backoff_base ** attempt)
 
-            except requests.TooManyRedirects:
-                return FetchResult(
-                    url=url, original_url=url, status_code=-1,
-                    content_type="", html=None, error="Too many redirects",
-                )
-
-            except requests.RequestException as exc:
-                logger.warning("Request error on %s: %s", url, exc)
+            except Exception as exc:
+                logger.warning("Unexpected error on %s: %s", url, exc)
                 if attempt < self._max_retries - 1:
                     time.sleep(self._backoff_base ** attempt)
 
