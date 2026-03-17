@@ -141,6 +141,10 @@ def main():
     write_predictions(args.predictions_path, predictions)
     logger.info("Wrote %d predictions to %s", len(predictions), args.predictions_path)
 
+    logger.info("=== Per-question predictions ===")
+    for i, (q, pred) in enumerate(zip(questions, predictions)):
+        logger.info("[%d] Q: %s | A: %s", i + 1, q, pred)
+
     total = time.time() - t0
     logger.info("Done in %.1fs (%.2fs/question avg)", total, total / len(questions))
 
