@@ -3,26 +3,26 @@ Master of Engineering (M.Eng.)
 Saturday, April 18, 2026
 Dan Garcia
 Pioneers in Engineering
-510-643-0805
+8058
 510-517-4041
 gjohnston@berkeley.edu
 721 Sutardja Dai Hall
 510-643-5386
 257 Cory Hall
-Jianzhi Wang
+Tanush Talati
 Tanush Talati
 Adwait Godbole
+2020
 Unknown
-3.3 or above
 1
 9
 1,720
-19 percent
-Unknown
-Unknown
+19%
+Over 100
+Three
 Daniel Klein and Anca Dragan
 Hany Farid
-February 16 2026
+February 16, 2026
 National Aeronautics and Space Administration
 eleven
 Unknown
@@ -38,8 +38,8 @@ Jelani Nelson
 Joseph Gonzalez
 Josh Hug
 minilek@berkeley.edu
-Computer Science from MIT.
-minilek@berkeley.edu
+Computer Science
+Unknown
 Unknown
 Michael Sun
 grads-ee@berkeley.edu
@@ -51,13 +51,13 @@ CS162
 Stanford University
 UC Berkeley
 Carnegie Mellon University
-Monday 11-12, 779 Soda; Friday 2- 3, 210 Wheeler
+Monday 11-12, Friday 2-3
 Unknown
 No
-Unknown
-50th anniversary of EECS
+No deadline given.
+50 years
 EECS C206A
-Cory 540AB
+Cory 119
 Unknown
 Formal Methods: Specification, Verification, and Synthesis
 passFail
@@ -65,10 +65,10 @@ Nancy Amato
 Alistair Sinclair
 OpenAI
 Manuel Blum
-Unknown
+1969
 over 25,000
 Christopher Hunn
-Yes.
+Yes
 Chisel: Constructing Hardware in a Scala Embedded Language
 Honorable Mention for ACM Doctoral Dissertation Award
 Rethinking Data Use in Large Language Models
@@ -77,7 +77,7 @@ Cognitive Science
 501 Cory Hall
 Physics
 Clarence Linus Cory
-First tenured black professor in the entire University of California
+First tenured black professor in UC system
 IEEE 754 Floating Point Standard
 Redundant Arrays of Inexpensive Disks
 SPICE
@@ -93,8 +93,8 @@ Corporate Access Program
 Unknown
 Ravi Ramamoorthi and Ren Ng
 Accountable Data Fusion and Privacy Preservation Techniques in Cyber-Physical Systems
-Unknown
+2018
 Neural module networks (NMNs)
 Unknown
-10-minute walk
+10 minutes
 Hearst and LeRoy Avenues
