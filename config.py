@@ -21,6 +21,11 @@ MAX_PAGES = 20000
 # Minimum seconds between requests to the same domain
 CRAWL_DELAY_SECONDS = 0.0
 
+# Per-domain overrides (take precedence over both CRAWL_DELAY_SECONDS and robots.txt)
+DOMAIN_CRAWL_DELAYS = {
+    "www2.eecs.berkeley.edu": 0.5,
+}
+
 REQUEST_TIMEOUT_SECONDS = 10
 
 MAX_RETRIES = 3
@@ -34,7 +39,7 @@ USER_AGENT = "UCB-ANLP-RAG-Crawler/1.0 (educational; cs-course-project)"
 EXTRACTOR = "resiliparse"
 
 # Pages with fewer extracted characters than this are discarded
-MIN_CONTENT_LENGTH = 100
+MIN_CONTENT_LENGTH = 20
 
 # Chunker
 CHUNK_SIZE = 100

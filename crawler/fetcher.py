@@ -74,7 +74,7 @@ class Fetcher:
             )
 
         domain = self._domain(url)
-        delay = robots_cache.get_crawl_delay(url) or self._crawl_delay
+        delay = config.DOMAIN_CRAWL_DELAYS.get(domain) or robots_cache.get_crawl_delay(url) or self._crawl_delay
         self._enforce_rate_limit(domain, delay)
 
         for attempt in range(self._max_retries):
