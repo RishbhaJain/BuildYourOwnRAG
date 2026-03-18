@@ -85,14 +85,12 @@ def main():
         pred = predictions[i]
 
         # Support multiple ground truth answers (take max score per SQuAD eval)
-        if isinstance(ref, list):
-            em = max(exact_match(pred, r) for r in ref)
-            f1 = max(token_f1(pred, r) for r in ref)
-            ref_display_str = ref[0]
-        else:
-            em = exact_match(pred, ref)
-            f1 = token_f1(pred, ref)
-            ref_display_str = ref
+        # Handles lists and pipe-delimited strings (autograder format)
+        if isinstance(ref, str):
+            ref = [r.strip() for r in ref.split("|")]
+        em = max(exact_match(pred, r) for r in ref)
+        f1 = max(token_f1(pred, r) for r in ref)
+        ref_display_str = ref[0]
         em_scores.append(em)
         f1_scores.append(f1)
 
