@@ -1,35 +1,35 @@
-Master of Science (M.S.), Doctor of Philosophy (Ph.D.), and combined
+Master of Science (M.S.), Doctor of Philosophy (Ph.D.), and the
 Master of Engineering (M.Eng.)
 Saturday, April 18, 2026
 Dan Garcia
 Pioneers in Engineering
-8058
+510-643-0805
 510-517-4041
-gjohnston@berkeley.edu
+eecs-advising@berkeley.edu
 721 Sutardja Dai Hall
 510-643-5386
-257 Cory Hall
+269 Cory Hall
 Jianzhi Wang
 Tanush Talati
 Adwait Godbole
-Unknown
-3.3
-2
+2020
+3.3 or above
+1
 5
 1,720
 19%
-Over 100
-Three
-Daniel Klein and Anca Dragan
+Over 70
+6
+Anca Dragan and Dan Klein
 Hany Farid
 2026
 National Aeronautics and Space Administration
 eleven
 Unknown
 ersohrops@erso.berkeley.edu
-2010
+Unknown
 Berkeley Artificial Intelligence Research
-CS 287
+EECS C106B
 3.0
 International House
 U.S. Citizens or permanent residents.
@@ -37,54 +37,54 @@ U.S. Citizens or permanent residents.
 Jelani Nelson
 Joseph Gonzalez
 Josh Hug
-minilek@berkeley.edu
-Computer Science
-minilek@berkeley.edu
 Unknown
+Theoretical computer science
+Rachel Zhang
+ganton@berkeley.edu
 Michael Sun
 grads-ee@berkeley.edu
 DialOp
-Collaborative Language Agents
+Unknown
 CS 61B
-CS162
+CS 162
 425 Sutardja Dai Hall
 Stanford University
 UC Berkeley
 Carnegie Mellon University
-Monday 11-12, Friday 2-3
+Monday 11-12, 779 Soda, Friday 2- 3, 210 Wheeler
 gsicoordinators@eecs.berkeley.edu
 No
-No deadline given.
-50 years of EECS
-EECS C206A
-Cory 119
-Valley Life Sciences 2050
+February 1, 2027
+50 years
+C106A
+Cory 540AB
+Pimentel 1
 Formal Methods: Specification, Verification, and Synthesis
 passFail
-Nancy Amato
+Nancy Amato, David Allstot, Richard Muray, Lars Rasmussen, and Kishore
 Alistair Sinclair
 OpenAI
 Manuel Blum
-1969
-more than 25,000
+Unknown
+25,000
 Christopher Hunn
 Yes
 Chisel: Constructing Hardware in a Scala Embedded Language
-Honorable Mention for ACM Doctoral Dissertation Award
+Honorable Mention
 Rethinking Data Use in Large Language Models
-Fellow of the Royal Society
+National Academy of Engineering
 Cognitive Science
 501 Cory Hall
 Physics
 Clarence Linus Cory
-First tenured black professor in UC system
+First tenured black professor in the entire University of California
 IEEE 754 Floating Point Standard
-Redundant Arrays of Inexpensive Disks
+Redundant Array of Inexpensive Disks
 SPICE
 NVIDIA
 1995
-Srinivas Devadas, DJ Seo, Dana Angluin, John Schulman
-Unknown
+Srinivas Devadas, DJ Seo, Dana Angluin, and John Schulman
+EECS alumnus
 four-page reflection paper
 Judy Smithson
 jrs@berkeley.edu
@@ -93,8 +93,8 @@ Corporate Access Program
 Unknown
 Ravi Ramamoorthi and Ren Ng
 Accountable Data Fusion and Privacy Preservation Techniques in Cyber-Physical Systems
-November 28 2018
+2018
 Neural module networks (NMNs)
 Unknown
 10 minutes
-Hearst and LeRoy Avenues.
+Hearst and LeRoy Avenues
