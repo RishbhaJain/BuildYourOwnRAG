@@ -3,8 +3,12 @@ Generator module: takes a question + retrieved passages and produces a short ans
 via the provided llm.py wrapper.
 """
 
+import logging
+
 from llm import call_llm
 import config
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are a factoid QA assistant for UC Berkeley EECS. "
@@ -83,8 +87,17 @@ def generate_answer(
             max_tokens=max_tokens,
             temperature=0.0,
         )
-    except RuntimeError:
+    except RuntimeError as e:
+        logger.warning("[UNKNOWN-REASON: api_error] question=%r error=%s", question[:60], e)
         return fallback
 
     answer = postprocess_answer(raw)
-    return answer if answer else fallback
+
+    if not answer:
+        logger.warning("[UNKNOWN-REASON: empty_response] question=%r raw=%r", question[:60], raw[:50])
+        return fallback
+
+    if answer.lower() == "unknown":
+        logger.info("[UNKNOWN-REASON: llm_said_unknown] question=%r", question[:60])
+
+    return answer

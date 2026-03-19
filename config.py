@@ -69,3 +69,8 @@ CHUNK_OVERLAP_WORDS = 50
 # Documents with fewer words than this are kept whole (not chunked)
 CHUNK_MIN_DOC_WORDS = 200
 CHUNKS_JSONL_PATH = "data/chunks.jsonl"
+
+# --- Reranking ---
+RERANKING_ENABLED = False        # Toggle without code changes
+RERANK_RETRIEVE_K = 20           # Retrieve this many, then rerank down to RERANK_TOP_K
+RERANK_TOP_K = 5                 # Keep this many after reranking (passed to generator)

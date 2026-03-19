@@ -10,8 +10,10 @@ Usage:
 import argparse
 import logging
 import os
+import re
 import sys
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -28,12 +30,26 @@ from retriever.dense_retriever import DenseRetriever
 from retriever.bm25_retriever import BM25Retriever
 from retriever.fusion import reciprocal_rank_fusion
 from llms.llm_pipeline import generate_answer
+from llms.reranker import rerank_passages
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s  %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class _ReasonCollector(logging.Handler):
+    """Intercepts [UNKNOWN-REASON: tag] log lines from llm_pipeline."""
+
+    def __init__(self):
+        super().__init__()
+        self.counts: Counter = Counter()
+
+    def emit(self, record):
+        m = re.search(r'\[UNKNOWN-REASON: (\w+)\]', record.getMessage())
+        if m:
+            self.counts[m.group(1)] += 1
 
 
 def load_questions(path: str) -> list[str]:
@@ -65,7 +81,7 @@ def main():
     parser.add_argument(
         "--top-k",
         type=int,
-        default=config.DENSE_TOP_K,
+        default=config.RERANK_RETRIEVE_K if config.RERANKING_ENABLED else config.DENSE_TOP_K,
         help="Number of passages to retrieve per question",
     )
     parser.add_argument(
@@ -109,7 +125,22 @@ def main():
     else:
         passages_all = dense_results_all
 
+    # --- Optional LLM reranking ---
+    if config.RERANKING_ENABLED:
+        logger.info(
+            "Reranking passages with LLM (retrieve %d → keep %d)...",
+            args.top_k, config.RERANK_TOP_K,
+        )
+        t_rerank = time.time()
+        passages_all = [
+            rerank_passages(q, passages, top_k=config.RERANK_TOP_K)
+            for q, passages in zip(questions, passages_all)
+        ]
+        logger.info("Reranking done in %.1fs", time.time() - t_rerank)
+
     # --- Parallel LLM generation ---
+    reason_collector = _ReasonCollector()
+    logging.getLogger("llms.llm_pipeline").addHandler(reason_collector)
     logger.info("Generating answers with %d concurrent workers...", args.workers)
     predictions = ["Unknown"] * len(questions)
     t_gen = time.time()
@@ -139,6 +170,14 @@ def main():
 
     write_predictions(args.predictions_path, predictions)
     logger.info("Wrote %d predictions to %s", len(predictions), args.predictions_path)
+
+    total_unknown = sum(1 for p in predictions if p.lower() == "unknown")
+    logger.info("Unknown predictions: %d / %d total", total_unknown, len(predictions))
+    if reason_collector.counts:
+        for reason, count in reason_collector.counts.most_common():
+            logger.info("  [unknown breakdown] %s: %d", reason, count)
+    elif total_unknown:
+        logger.info("  [unknown breakdown] all from generate_one exception handler (see warnings above)")
 
     total = time.time() - t0
     logger.info("Done in %.1fs (%.2fs/question avg)", total, total / len(questions))
