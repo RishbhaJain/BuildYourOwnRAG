@@ -1,7 +1,0 @@
-*.bin filter=lfs diff=lfs merge=lfs -text
-*.npy filter=lfs diff=lfs merge=lfs -text
-data/chunks.jsonl filter=lfs diff=lfs merge=lfs -text
-data/corpus.jsonl filter=lfs diff=lfs merge=lfs -text
-data/corpus_combined.jsonl filter=lfs diff=lfs merge=lfs -text
-data/embeddings.npy filter=lfs diff=lfs merge=lfs -text
-data/faiss_index.bin filter=lfs diff=lfs merge=lfs -text
