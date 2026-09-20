@@ -1,0 +1,4 @@
+-r requirements-service.txt
+httpx2>=2.13
+pytest>=8,<10
+ruff>=0.16
