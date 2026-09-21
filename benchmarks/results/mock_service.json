@@ -1,0 +1,8 @@
+{
+  "configuration": "FastAPI TestClient with deterministic mocked retrieval and generation",
+  "iterations": 1000,
+  "warmup_requests": 50,
+  "p50_latency_ms": 0.493,
+  "p95_latency_ms": 0.758,
+  "throughput_requests_per_second": 1827.68
+}

@@ -1,4 +1,4 @@
-name: Evaluation metric tests
+name: CI
 
 on:
   pull_request:
@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  evaluation-metrics:
+  service-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -24,8 +24,85 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install test dependency
-        run: python -m pip install "pytest>=8,<10"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
 
-      - name: Run evaluation metric tests
-        run: python -m pytest -q tests/test_evaluation.py
+      - name: Check formatting and lint
+        run: |
+          python -m ruff format --check \
+            service \
+            benchmarks \
+            tests/test_service_api.py \
+            tests/test_service_pipeline.py \
+            retriever/dense_retriever.py
+          python -m ruff check \
+            service \
+            benchmarks \
+            tests/test_service_api.py \
+            tests/test_service_pipeline.py \
+            retriever/dense_retriever.py
+
+      - name: Run active evaluation and service tests
+        run: |
+          python -m pytest -q \
+            tests/test_evaluation.py \
+            tests/test_service_pipeline.py \
+            tests/test_service_api.py
+
+      - name: Run reproducible mock benchmark
+        run: |
+          python -m benchmarks.benchmark_service \
+            --iterations 100 \
+            --warmup 10 \
+            --output-dir /tmp/rag-benchmark
+
+  container-smoke-test:
+    needs: service-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build lightweight test image
+        run: docker build --build-arg INSTALL_ML_DEPS=0 -t build-your-own-rag:test .
+
+      - name: Start mock service
+        run: |
+          docker run -d \
+            --name rag-api \
+            -e RAG_MODE=mock \
+            -p 8000:8000 \
+            build-your-own-rag:test
+
+      - name: Exercise health, answer, and metrics endpoints
+        run: |
+          rag_ready=false
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/ready; then
+              rag_ready=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$rag_ready" != "true" ]; then
+            docker logs rag-api
+            exit 1
+          fi
+
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS \
+            -X POST http://127.0.0.1:8000/answer \
+            -H "Content-Type: application/json" \
+            -d '{"question":"What is tested?","top_k":2}'
+          curl -fsS http://127.0.0.1:8000/metrics | grep -q "rag_stage_latency_seconds"
+
+      - name: Show container logs
+        if: always()
+        run: docker logs rag-api || true
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f rag-api || true

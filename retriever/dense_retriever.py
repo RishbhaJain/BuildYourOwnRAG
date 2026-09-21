@@ -50,7 +50,9 @@ class DenseRetriever:
 
         os.makedirs(os.path.dirname(self.embeddings_path) or ".", exist_ok=True)
         np.save(self.embeddings_path, embeddings)
-        logger.info("Saved embeddings (%s) to %s", embeddings.shape, self.embeddings_path)
+        logger.info(
+            "Saved embeddings (%s) to %s", embeddings.shape, self.embeddings_path
+        )
         return embeddings
 
     def build_index(self, embeddings: np.ndarray = None):
@@ -69,39 +71,49 @@ class DenseRetriever:
 
         os.makedirs(os.path.dirname(self.index_path) or ".", exist_ok=True)
         faiss.write_index(self.index, self.index_path)
-        logger.info("Built and saved FAISS index (%d vectors, dim=%d) to %s",
-                     self.index.ntotal, dim, self.index_path)
+        logger.info(
+            "Built and saved FAISS index (%d vectors, dim=%d) to %s",
+            self.index.ntotal,
+            dim,
+            self.index_path,
+        )
 
     def load_index(self):
         """Load a pre-built FAISS index and chunk metadata."""
         if not self.chunks:
             self.load_chunks()
         self.index = faiss.read_index(self.index_path)
-        logger.info("Loaded FAISS index (%d vectors) from %s",
-                     self.index.ntotal, self.index_path)
+        logger.info(
+            "Loaded FAISS index (%d vectors) from %s",
+            self.index.ntotal,
+            self.index_path,
+        )
 
     def retrieve_top_k(self, query: str, k: int = config.DENSE_TOP_K) -> list[dict]:
         """Retrieve top-k chunks for a single query."""
+        return self.batch_retrieve_top_k([query], k=k)[0]
+
+    def encode_queries(self, queries: list[str]) -> np.ndarray:
+        """Encode queries separately so callers can measure embedding latency."""
+        return self.embedder.encode_queries(queries)
+
+    def search_encoded(
+        self,
+        query_vectors: np.ndarray,
+        k: int = config.DENSE_TOP_K,
+    ) -> list[list[dict]]:
+        """Search the FAISS index with pre-encoded query vectors.
+
+        Separating encoding from search keeps the batch API unchanged while
+        allowing online serving code to report embedding and index-search
+        latency independently.
+        """
         if self.index is None:
             self.load_index()
 
-        query_vec = self.embedder.encode_queries([query])
-        scores, indices = self.index.search(query_vec.astype(np.float32), k)
-
-        results = []
-        for score, idx in zip(scores[0], indices[0]):
-            if idx < 0:
-                continue
-            results.append(dict(self.chunks[idx], dense_score=float(score)))
-        return results
-
-    def batch_retrieve_top_k(self, queries: list[str], k: int = config.DENSE_TOP_K) -> list[list[dict]]:
-        """Retrieve top-k chunks for a batch of queries at once."""
-        if self.index is None:
-            self.load_index()
-
-        query_vecs = self.embedder.encode_queries(queries)
-        scores_batch, indices_batch = self.index.search(query_vecs.astype(np.float32), k)
+        scores_batch, indices_batch = self.index.search(
+            query_vectors.astype(np.float32), k
+        )
 
         all_results = []
         for scores, indices in zip(scores_batch, indices_batch):
@@ -112,3 +124,10 @@ class DenseRetriever:
                 results.append(dict(self.chunks[idx], dense_score=float(score)))
             all_results.append(results)
         return all_results
+
+    def batch_retrieve_top_k(
+        self, queries: list[str], k: int = config.DENSE_TOP_K
+    ) -> list[list[dict]]:
+        """Retrieve top-k chunks for a batch of queries at once."""
+        query_vectors = self.encode_queries(queries)
+        return self.search_encoded(query_vectors, k=k)
