@@ -31,6 +31,23 @@ class ServiceMetrics:
             "RAG answers that returned the fallback value.",
             registry=self.registry,
         )
+        self.cache_requests = Counter(
+            "rag_cache_requests_total",
+            "RAG requests by cache outcome.",
+            ("result",),
+            registry=self.registry,
+        )
+        self.provider_tokens = Counter(
+            "rag_provider_tokens_total",
+            "Provider tokens consumed by type.",
+            ("type",),
+            registry=self.registry,
+        )
+        self.provider_cost = Counter(
+            "rag_provider_cost_usd_total",
+            "Provider-reported generation cost in US dollars.",
+            registry=self.registry,
+        )
         self.request_latency = Histogram(
             "rag_request_latency_seconds",
             "End-to-end latency for answer requests.",
@@ -73,6 +90,10 @@ class ServiceMetrics:
         timings: dict[str, float],
         fallback: bool,
         request_elapsed_seconds: float,
+        cache_result: str,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        estimated_cost_usd: float | None,
     ) -> None:
         self.requests.labels(status="success").inc()
         self.request_latency.observe(request_elapsed_seconds)
@@ -81,6 +102,13 @@ class ServiceMetrics:
                 self.stage_latency.labels(stage=stage).observe(seconds)
         if fallback:
             self.fallbacks.inc()
+        self.cache_requests.labels(result=cache_result).inc()
+        if prompt_tokens:
+            self.provider_tokens.labels(type="prompt").inc(prompt_tokens)
+        if completion_tokens:
+            self.provider_tokens.labels(type="completion").inc(completion_tokens)
+        if estimated_cost_usd:
+            self.provider_cost.inc(estimated_cost_usd)
 
     def observe_failure(self, elapsed_seconds: float) -> None:
         self.requests.labels(status="error").inc()

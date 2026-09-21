@@ -32,6 +32,30 @@ This reference benchmark isolates FastAPI and orchestration overhead. It does no
 python -m benchmarks.benchmark_service --iterations 1000 --warmup 50
 ```
 
+### Live end-to-end benchmark
+
+The live benchmark drives the production API over the existing question set at
+concurrency 1, 4, and 8. It records end-to-end p50/p95 latency, true streamed
+time to first token, throughput, completion tokens per second, fallback and
+failure categories, provider-reported cost per question, and cache hit rate.
+
+```bash
+export OPENROUTER_API_KEY="your-key"
+export RAG_AUTO_DOWNLOAD_MODEL=1
+uvicorn service.app:app --host 0.0.0.0 --port 8000
+
+python -m benchmarks.benchmark_live \
+  --questions questions.txt \
+  --limit 100 \
+  --concurrency 1,4,8 \
+  --output benchmarks/results/live_service.json
+```
+
+The run compares uncached requests against the same workload after warming the
+bounded TTL response cache. It never substitutes mock latency for live-model
+results. Provider usage is read from OpenRouter's streamed response rather than
+estimated from a local tokenizer.
+
 ## Architecture
 
 ```mermaid
@@ -56,6 +80,7 @@ flowchart TD
 - **Efficient inference path:** the embedding model, FAISS index, corpus, and BM25 state load once at process startup.
 - **Measured online serving:** FastAPI endpoints return selected chunk IDs plus embedding, dense retrieval, BM25, fusion, generation, and total latency.
 - **Operational visibility:** Prometheus counters, readiness state, request/failure/fallback rates, and per-stage latency histograms.
+- **Measured optimization:** a bounded TTL response cache reports hit/miss/bypass metrics and avoids repeat retrieval, generation, token usage, and provider cost.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
 
@@ -132,6 +157,13 @@ The response includes the answer, fallback status, selected chunk IDs, and stage
   "answer": "Dan Garcia",
   "retrieved_chunk_ids": ["chunk-123", "chunk-456"],
   "fallback": false,
+  "cache_hit": false,
+  "provider_called": true,
+  "prompt_tokens": 612,
+  "completion_tokens": 4,
+  "total_tokens": 616,
+  "estimated_cost_usd": 0.00012,
+  "ttft_ms": 184.7,
   "timings_ms": {
     "embedding": 18.4,
     "dense_retrieval": 2.1,
@@ -156,6 +188,9 @@ The endpoint exposes:
 - `rag_requests_total{status=...}`
 - `rag_request_failures_total`
 - `rag_fallbacks_total`
+- `rag_cache_requests_total{result=...}`
+- `rag_provider_tokens_total{type=...}`
+- `rag_provider_cost_usd_total`
 - `rag_request_latency_seconds`
 - `rag_stage_latency_seconds{stage=...}`
 - `rag_service_ready`
@@ -188,6 +223,9 @@ Mock mode exists only for integration testing. It does not report model quality 
 python -m pip install -r requirements-dev.txt
 python -m pytest -q \
   tests/test_evaluation.py \
+  tests/test_cache.py \
+  tests/test_llm.py \
+  tests/test_live_benchmark.py \
   tests/test_service_pipeline.py \
   tests/test_service_api.py
 python -m benchmarks.benchmark_service
@@ -218,6 +256,7 @@ These tests require no model download, external service, or API key. CI also bui
 - Dense vectors are L2-normalized, so inner product in FAISS corresponds to cosine similarity.
 - Reciprocal Rank Fusion combines dense and lexical rankings without requiring score calibration.
 - The service separates query embedding from FAISS search so both stages can be measured independently.
+- Repeated successful queries are cached by normalized question and retrieval depth; `use_cache=false` provides an explicit uncached benchmark/control path.
 - Liveness remains available when model initialization fails, while readiness correctly returns HTTP 503.
 - API failures return a stable public error and keep backend details in server logs.
 

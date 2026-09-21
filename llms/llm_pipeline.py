@@ -3,8 +3,23 @@ Generator module: takes a question + retrieved passages and produces a short ans
 via the provided llm.py wrapper.
 """
 
-from llm import call_llm
+from dataclasses import dataclass
+
 import config
+from llm import call_llm, call_llm_with_metrics
+
+
+@dataclass(frozen=True)
+class GenerationResult:
+    """Answer text and live provider measurements."""
+
+    answer: str
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    cost_usd: float | None = None
+    ttft_seconds: float | None = None
+
 
 SYSTEM_PROMPT = (
     "You are a factoid QA assistant for UC Berkeley EECS. "
@@ -15,7 +30,7 @@ SYSTEM_PROMPT = (
     "For questions asking 'how long ago', you MUST subtract the year from 2026 and "
     "output the result as a number of years (e.g. if the year is 1985, output '41 years'). "
     "Never output a raw year as the answer to a 'how long ago' question. "
-    "Only say \"Unknown\" if the context contains no relevant information at all."
+    'Only say "Unknown" if the context contains no relevant information at all.'
 )
 
 
@@ -88,3 +103,34 @@ def generate_answer(
 
     answer = postprocess_answer(raw)
     return answer if answer else fallback
+
+
+def generate_answer_with_metrics(
+    question: str,
+    passages: list[dict],
+    model: str = config.LLM_MODEL,
+    max_tokens: int = config.MAX_NEW_TOKENS,
+    fallback: str = "Unknown",
+) -> GenerationResult:
+    """Generate an answer and preserve provider latency, usage, and cost."""
+    query = build_query(question, passages)
+    try:
+        response = call_llm_with_metrics(
+            query=query,
+            system_prompt=SYSTEM_PROMPT,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=0.0,
+        )
+    except (RuntimeError, ValueError):
+        return GenerationResult(answer=fallback)
+
+    answer = postprocess_answer(response.content) or fallback
+    return GenerationResult(
+        answer=answer,
+        prompt_tokens=response.prompt_tokens,
+        completion_tokens=response.completion_tokens,
+        total_tokens=response.total_tokens,
+        cost_usd=response.cost_usd,
+        ttft_seconds=response.ttft_seconds,
+    )

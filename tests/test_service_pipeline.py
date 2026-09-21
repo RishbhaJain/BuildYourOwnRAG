@@ -1,3 +1,4 @@
+from service.cache import TTLCache
 from service.pipeline import RAGPipeline
 
 
@@ -80,3 +81,31 @@ def test_pipeline_marks_unknown_as_fallback():
 
     assert result.answer == "Unknown"
     assert result.fallback is True
+
+
+def test_pipeline_cache_skips_retrieval_and_generation_on_repeat_query():
+    calls = {"generation": 0}
+
+    def generator(question, passages):
+        calls["generation"] += 1
+        return "Cached answer"
+
+    pipeline = RAGPipeline(
+        dense=FakeDenseRetriever(),
+        sparse=FakeSparseRetriever(),
+        generator=generator,
+        response_cache=TTLCache(max_entries=4, ttl_seconds=60),
+    )
+
+    first = pipeline.answer("Repeated question", use_cache=True)
+    second = pipeline.answer("Repeated question", use_cache=True)
+    bypassed = pipeline.answer("Repeated question", use_cache=False)
+
+    assert first.cache_hit is False
+    assert first.provider_called is True
+    assert second.cache_hit is True
+    assert second.provider_called is False
+    assert second.estimated_cost_usd == 0.0
+    assert set(second.timings_seconds) == {"cache_lookup", "total"}
+    assert bypassed.cache_hit is False
+    assert calls["generation"] == 2

@@ -22,6 +22,7 @@ PipelineFactory = Callable[[], RAGPipeline]
 class AnswerRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2_000)
     top_k: int = Field(default=5, ge=1, le=50)
+    use_cache: bool = True
 
     @field_validator("question")
     @classmethod
@@ -37,6 +38,13 @@ class AnswerResponse(BaseModel):
     retrieved_chunk_ids: list[str]
     fallback: bool
     timings_ms: dict[str, float]
+    cache_hit: bool
+    provider_called: bool
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    estimated_cost_usd: float | None
+    ttft_ms: float | None
 
 
 def create_app(
@@ -105,6 +113,7 @@ def create_app(
                 pipeline.answer,
                 request.question,
                 request.top_k,
+                request.use_cache,
             )
         except Exception:
             metrics.observe_failure(time.perf_counter() - started)
@@ -117,6 +126,16 @@ def create_app(
             result.timings_seconds,
             result.fallback,
             time.perf_counter() - started,
+            cache_result=(
+                "bypass"
+                if not request.use_cache
+                else "hit"
+                if result.cache_hit
+                else "miss"
+            ),
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            estimated_cost_usd=result.estimated_cost_usd,
         )
         return AnswerResponse(
             answer=result.answer,
@@ -126,6 +145,17 @@ def create_app(
                 stage: round(seconds * 1_000, 3)
                 for stage, seconds in result.timings_seconds.items()
             },
+            cache_hit=result.cache_hit,
+            provider_called=result.provider_called,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
+            estimated_cost_usd=result.estimated_cost_usd,
+            ttft_ms=(
+                round(result.ttft_seconds * 1_000, 3)
+                if result.ttft_seconds is not None
+                else None
+            ),
         )
 
     @app.get("/metrics")
