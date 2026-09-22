@@ -4,15 +4,19 @@ These tests mock call_llm so they run without an API key.
 """
 
 from unittest.mock import patch
+
+from llm import LLMResponse
 from llms.llm_pipeline import (
-    format_context,
+    GenerationResult,
     build_query,
-    postprocess_answer,
+    format_context,
     generate_answer,
+    generate_answer_with_metrics,
+    postprocess_answer,
 )
 
-
 # --- format_context ---
+
 
 def test_format_context_with_titles():
     passages = [
@@ -33,6 +37,7 @@ def test_format_context_without_titles():
 
 # --- build_query ---
 
+
 def test_build_query_structure():
     passages = [{"title": "T", "text": "passage text"}]
     result = build_query("What is X?", passages)
@@ -42,6 +47,7 @@ def test_build_query_structure():
 
 
 # --- postprocess_answer ---
+
 
 def test_postprocess_strips_whitespace():
     assert postprocess_answer("  hello world  \n") == "hello world"
@@ -62,6 +68,7 @@ def test_postprocess_empty_string():
 
 
 # --- generate_answer ---
+
 
 @patch("llms.llm_pipeline.call_llm")
 def test_generate_answer_success(mock_llm):
@@ -86,3 +93,29 @@ def test_generate_answer_empty_response_returns_fallback(mock_llm):
     passages = [{"text": "some text"}]
     answer = generate_answer("question?", passages)
     assert answer == "Unknown"
+
+
+@patch("llms.llm_pipeline.call_llm_with_metrics")
+def test_generate_answer_with_metrics_preserves_provider_telemetry(mock_llm):
+    mock_llm.return_value = LLMResponse(
+        content="  Dan Garcia\nextra explanation",
+        prompt_tokens=120,
+        completion_tokens=4,
+        total_tokens=124,
+        cost_usd=0.00042,
+        ttft_seconds=0.18,
+    )
+
+    result = generate_answer_with_metrics(
+        "Who leads the group?",
+        [{"title": "People", "text": "Dan Garcia leads the group."}],
+    )
+
+    assert result == GenerationResult(
+        answer="Dan Garcia",
+        prompt_tokens=120,
+        completion_tokens=4,
+        total_tokens=124,
+        cost_usd=0.00042,
+        ttft_seconds=0.18,
+    )

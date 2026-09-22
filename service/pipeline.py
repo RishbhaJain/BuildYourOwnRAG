@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from retriever.fusion import reciprocal_rank_fusion
+from service.cache import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,13 @@ class RAGResult:
     retrieved_chunk_ids: list[str]
     timings_seconds: dict[str, float]
     fallback: bool
+    cache_hit: bool = False
+    provider_called: bool = True
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    ttft_seconds: float | None = None
 
 
 class RAGPipeline:
@@ -50,12 +58,14 @@ class RAGPipeline:
         *,
         default_top_k: int = 5,
         clock: Clock = time.perf_counter,
+        response_cache: TTLCache[RAGResult] | None = None,
     ) -> None:
         self.dense = dense
         self.sparse = sparse
         self.generator = generator
         self.default_top_k = default_top_k
         self.clock = clock
+        self.response_cache = response_cache
 
     def _measure(self, timings: dict[str, float], stage: str, operation):
         started = self.clock()
@@ -63,7 +73,12 @@ class RAGPipeline:
         timings[stage] = self.clock() - started
         return value
 
-    def answer(self, question: str, top_k: int | None = None) -> RAGResult:
+    def answer(
+        self,
+        question: str,
+        top_k: int | None = None,
+        use_cache: bool = True,
+    ) -> RAGResult:
         """Answer one question and expose latency for every major stage."""
         question = question.strip()
         if not question:
@@ -75,6 +90,27 @@ class RAGPipeline:
 
         total_started = self.clock()
         timings: dict[str, float] = {}
+
+        cache_key = f"{selected_top_k}\0{question.casefold()}"
+        if use_cache and self.response_cache is not None:
+            cache_started = self.clock()
+            cached = self.response_cache.get(cache_key)
+            timings["cache_lookup"] = self.clock() - cache_started
+            if cached is not None:
+                timings["total"] = self.clock() - total_started
+                return RAGResult(
+                    answer=cached.answer,
+                    retrieved_chunk_ids=cached.retrieved_chunk_ids,
+                    timings_seconds=timings,
+                    fallback=cached.fallback,
+                    cache_hit=True,
+                    provider_called=False,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    estimated_cost_usd=0.0,
+                    ttft_seconds=0.0,
+                )
 
         query_vectors = self._measure(
             timings,
@@ -100,15 +136,27 @@ class RAGPipeline:
                 top_k=selected_top_k,
             ),
         )
-        answer = self._measure(
+        generated = self._measure(
             timings,
             "generation",
             lambda: self.generator(question, fused_results),
         )
         timings["total"] = self.clock() - total_started
 
+        if isinstance(generated, str):
+            answer = generated
+            metadata = {}
+        else:
+            answer = generated.answer
+            metadata = {
+                "prompt_tokens": generated.prompt_tokens,
+                "completion_tokens": generated.completion_tokens,
+                "total_tokens": generated.total_tokens,
+                "estimated_cost_usd": generated.cost_usd,
+                "ttft_seconds": generated.ttft_seconds,
+            }
         normalized_answer = answer.strip()
-        return RAGResult(
+        result = RAGResult(
             answer=normalized_answer or "Unknown",
             retrieved_chunk_ids=[
                 str(chunk["chunk_id"])
@@ -117,13 +165,17 @@ class RAGPipeline:
             ],
             timings_seconds=timings,
             fallback=(not normalized_answer or normalized_answer.lower() == "unknown"),
+            **metadata,
         )
+        if use_cache and self.response_cache is not None and not result.fallback:
+            self.response_cache.set(cache_key, result)
+        return result
 
 
 def load_production_pipeline() -> RAGPipeline:
     """Load model, FAISS index, corpus, and BM25 state once at startup."""
     import config
-    from llms.llm_pipeline import generate_answer
+    from llms.llm_pipeline import generate_answer_with_metrics
     from retriever.bm25_retriever import BM25Retriever
     from retriever.dense_retriever import DenseRetriever
 
@@ -147,11 +199,18 @@ def load_production_pipeline() -> RAGPipeline:
     sparse = BM25Retriever()
     sparse.load_bm25()
 
+    cache_entries = int(os.getenv("RAG_CACHE_MAX_ENTRIES", "256"))
+    cache_ttl = float(os.getenv("RAG_CACHE_TTL_SECONDS", "300"))
+    response_cache = (
+        TTLCache[RAGResult](cache_entries, cache_ttl) if cache_entries > 0 else None
+    )
+
     return RAGPipeline(
         dense=dense,
         sparse=sparse,
-        generator=generate_answer,
+        generator=generate_answer_with_metrics,
         default_top_k=config.DENSE_TOP_K,
+        response_cache=response_cache,
     )
 
 
@@ -193,6 +252,7 @@ def build_mock_pipeline() -> RAGPipeline:
         sparse=_MockSparseRetriever(),
         generator=mock_generator,
         default_top_k=5,
+        response_cache=TTLCache[RAGResult](max_entries=32, ttl_seconds=60),
     )
 
 
