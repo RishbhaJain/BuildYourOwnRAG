@@ -186,7 +186,7 @@ curl http://localhost:8000/metrics
 The endpoint exposes:
 
 - `rag_requests_total{status=...}`
-- `rag_request_failures_total`
+- `rag_request_failures_total{category=...}`
 - `rag_fallbacks_total`
 - `rag_cache_requests_total{result=...}`
 - `rag_provider_tokens_total{type=...}`
@@ -259,6 +259,8 @@ These tests require no model download, external service, or API key. CI also bui
 - Repeated successful queries are cached by normalized question and retrieval depth; `use_cache=false` provides an explicit uncached benchmark/control path.
 - Liveness remains available when model initialization fails, while readiness correctly returns HTTP 503.
 - API failures return a stable public error and keep backend details in server logs.
+- Upstream generation failures retain a typed error signal, return HTTP 502, increment
+  the `provider` failure metric, and appear as provider failures in benchmark reports.
 
 ## Current limitations
 

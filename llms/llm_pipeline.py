@@ -6,6 +6,7 @@ via the provided llm.py wrapper.
 from dataclasses import dataclass
 
 import config
+
 from llm import call_llm, call_llm_with_metrics
 
 
@@ -19,6 +20,10 @@ class GenerationResult:
     total_tokens: int | None = None
     cost_usd: float | None = None
     ttft_seconds: float | None = None
+
+
+class ProviderGenerationError(RuntimeError):
+    """Raised when the upstream model provider cannot produce a response."""
 
 
 SYSTEM_PROMPT = (
@@ -122,8 +127,8 @@ def generate_answer_with_metrics(
             max_tokens=max_tokens,
             temperature=0.0,
         )
-    except (RuntimeError, ValueError):
-        return GenerationResult(answer=fallback)
+    except RuntimeError as exc:
+        raise ProviderGenerationError("LLM provider request failed") from exc
 
     answer = postprocess_answer(response.content) or fallback
     return GenerationResult(

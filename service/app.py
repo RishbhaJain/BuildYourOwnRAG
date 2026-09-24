@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
+from llms.llm_pipeline import ProviderGenerationError
 from service.metrics import ServiceMetrics
 from service.pipeline import RAGPipeline, create_pipeline_from_environment
 
@@ -115,8 +116,18 @@ def create_app(
                 request.top_k,
                 request.use_cache,
             )
+        except ProviderGenerationError:
+            metrics.observe_failure(
+                time.perf_counter() - started,
+                category="provider",
+            )
+            logger.exception("LLM provider failed during RAG inference.")
+            raise HTTPException(status_code=502, detail="LLM provider failed") from None
         except Exception:
-            metrics.observe_failure(time.perf_counter() - started)
+            metrics.observe_failure(
+                time.perf_counter() - started,
+                category="internal",
+            )
             logger.exception("RAG answer request failed.")
             raise HTTPException(
                 status_code=500, detail="RAG inference failed"

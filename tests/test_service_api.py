@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from llms.llm_pipeline import ProviderGenerationError
 from service.app import create_app
 from service.pipeline import build_mock_pipeline
 
@@ -81,4 +82,18 @@ def test_inference_failure_is_counted_without_leaking_exception_details():
         assert response.status_code == 500
         assert response.json() == {"detail": "RAG inference failed"}
         metrics = client.get("/metrics").text
-        assert "rag_request_failures_total 1.0" in metrics
+        assert 'rag_request_failures_total{category="internal"} 1.0' in metrics
+
+
+def test_provider_failure_returns_bad_gateway_and_is_counted_separately():
+    class ProviderFailurePipeline:
+        def answer(self, question, top_k, use_cache):
+            raise ProviderGenerationError("private provider detail")
+
+    with TestClient(create_app(lambda: ProviderFailurePipeline())) as client:
+        response = client.post("/answer", json={"question": "test"})
+        assert response.status_code == 502
+        assert response.json() == {"detail": "LLM provider failed"}
+        metrics = client.get("/metrics").text
+        assert 'rag_requests_total{status="error"} 1.0' in metrics
+        assert 'rag_request_failures_total{category="provider"} 1.0' in metrics
