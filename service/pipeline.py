@@ -175,10 +175,9 @@ class RAGPipeline:
 def load_production_pipeline() -> RAGPipeline:
     """Load model, FAISS index, corpus, and BM25 state once at startup."""
     import config
+    from llms.llm_pipeline import generate_answer_with_metrics
     from retriever.bm25_retriever import BM25Retriever
     from retriever.dense_retriever import DenseRetriever
-
-    from llms.llm_pipeline import generate_answer_with_metrics
 
     model_path = Path(config.EMBEDDING_MODEL)
     auto_download = os.getenv("RAG_AUTO_DOWNLOAD_MODEL", "0") == "1"
