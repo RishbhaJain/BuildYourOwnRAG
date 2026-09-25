@@ -146,6 +146,7 @@ def create_app(
             ),
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
             estimated_cost_usd=result.estimated_cost_usd,
         )
         return AnswerResponse(

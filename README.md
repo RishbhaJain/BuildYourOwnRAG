@@ -189,7 +189,7 @@ The endpoint exposes:
 - `rag_request_failures_total{category=...}`
 - `rag_fallbacks_total`
 - `rag_cache_requests_total{result=...}`
-- `rag_provider_tokens_total{type=...}`
+- `rag_provider_tokens_total{type="prompt|completion|total"}`
 - `rag_provider_cost_usd_total`
 - `rag_request_latency_seconds`
 - `rag_stage_latency_seconds{stage=...}`

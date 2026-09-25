@@ -94,6 +94,7 @@ class ServiceMetrics:
         cache_result: str,
         prompt_tokens: int | None,
         completion_tokens: int | None,
+        total_tokens: int | None,
         estimated_cost_usd: float | None,
     ) -> None:
         self.requests.labels(status="success").inc()
@@ -108,6 +109,8 @@ class ServiceMetrics:
             self.provider_tokens.labels(type="prompt").inc(prompt_tokens)
         if completion_tokens:
             self.provider_tokens.labels(type="completion").inc(completion_tokens)
+        if total_tokens:
+            self.provider_tokens.labels(type="total").inc(total_tokens)
         if estimated_cost_usd:
             self.provider_cost.inc(estimated_cost_usd)
 
