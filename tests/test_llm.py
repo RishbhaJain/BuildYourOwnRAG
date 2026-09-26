@@ -5,9 +5,12 @@ These tests mock call_llm so they run without an API key.
 
 from unittest.mock import patch
 
+import pytest
+
 from llm import LLMResponse
 from llms.llm_pipeline import (
     GenerationResult,
+    ProviderGenerationError,
     build_query,
     format_context,
     generate_answer,
@@ -119,3 +122,11 @@ def test_generate_answer_with_metrics_preserves_provider_telemetry(mock_llm):
         cost_usd=0.00042,
         ttft_seconds=0.18,
     )
+
+
+@patch("llms.llm_pipeline.call_llm_with_metrics")
+def test_generate_answer_with_metrics_propagates_provider_failure(mock_llm):
+    mock_llm.side_effect = RuntimeError("OpenRouter request timed out")
+
+    with pytest.raises(ProviderGenerationError, match="provider request failed"):
+        generate_answer_with_metrics("question?", [{"text": "some text"}])

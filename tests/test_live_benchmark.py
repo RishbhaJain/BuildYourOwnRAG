@@ -1,4 +1,4 @@
-from benchmarks.benchmark_live import Sample, summarize
+from benchmarks.benchmark_live import Sample, _http_failure_category, summarize
 
 
 def test_summary_reports_latency_usage_cost_cache_and_failures():
@@ -40,3 +40,8 @@ def test_summary_reports_latency_usage_cost_cache_and_failures():
     assert result["completion_tokens_per_second"] == 125.0
     assert result["provider_cost_usd_total"] == 0.002
     assert result["provider_cost_usd_per_question"] == 0.001
+
+
+def test_http_502_is_reported_as_provider_failure():
+    assert _http_failure_category(502) == "provider"
+    assert _http_failure_category(500) == "http_500"
