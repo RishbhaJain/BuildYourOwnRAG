@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from retriever.fusion import reciprocal_rank_fusion
 from service.cache import TTLCache
@@ -28,6 +28,7 @@ class SparseRetrieverLike(Protocol):
 
 Generator = Callable[[str, list[dict]], str]
 Clock = Callable[[], float]
+CacheStatus = Literal["hit", "miss", "bypass"]
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class RAGResult:
     timings_seconds: dict[str, float]
     fallback: bool
     cache_hit: bool = False
+    cache_status: CacheStatus = "bypass"
     provider_called: bool = True
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
@@ -104,6 +106,7 @@ class RAGPipeline:
                     timings_seconds=timings,
                     fallback=cached.fallback,
                     cache_hit=True,
+                    cache_status="hit",
                     provider_called=False,
                     prompt_tokens=0,
                     completion_tokens=0,
@@ -165,6 +168,9 @@ class RAGPipeline:
             ],
             timings_seconds=timings,
             fallback=(not normalized_answer or normalized_answer.lower() == "unknown"),
+            cache_status=(
+                "miss" if use_cache and self.response_cache is not None else "bypass"
+            ),
             **metadata,
         )
         if use_cache and self.response_cache is not None and not result.fallback:

@@ -6,6 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
@@ -40,6 +41,7 @@ class AnswerResponse(BaseModel):
     fallback: bool
     timings_ms: dict[str, float]
     cache_hit: bool
+    cache_status: Literal["hit", "miss", "bypass"]
     provider_called: bool
     prompt_tokens: int | None
     completion_tokens: int | None
@@ -137,13 +139,7 @@ def create_app(
             result.timings_seconds,
             result.fallback,
             time.perf_counter() - started,
-            cache_result=(
-                "bypass"
-                if not request.use_cache
-                else "hit"
-                if result.cache_hit
-                else "miss"
-            ),
+            cache_result=result.cache_status,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             total_tokens=result.total_tokens,
@@ -158,6 +154,7 @@ def create_app(
                 for stage, seconds in result.timings_seconds.items()
             },
             cache_hit=result.cache_hit,
+            cache_status=result.cache_status,
             provider_called=result.provider_called,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,

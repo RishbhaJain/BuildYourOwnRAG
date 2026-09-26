@@ -19,6 +19,7 @@ def test_health_readiness_answer_and_metrics():
         assert payload["answer"] == "Mock answer"
         assert payload["fallback"] is False
         assert payload["cache_hit"] is False
+        assert payload["cache_status"] == "miss"
         assert payload["provider_called"] is True
         assert payload["retrieved_chunk_ids"] == [
             "mock-dense-1",
@@ -39,6 +40,7 @@ def test_health_readiness_answer_and_metrics():
             json={"question": "What does the service return?", "top_k": 2},
         ).json()
         assert cached["cache_hit"] is True
+        assert cached["cache_status"] == "hit"
         assert cached["provider_called"] is False
         assert cached["estimated_cost_usd"] == 0.0
         assert set(cached["timings_ms"]) == {"cache_lookup", "total"}

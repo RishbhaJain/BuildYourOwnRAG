@@ -158,6 +158,7 @@ The response includes the answer, fallback status, selected chunk IDs, and stage
   "retrieved_chunk_ids": ["chunk-123", "chunk-456"],
   "fallback": false,
   "cache_hit": false,
+  "cache_status": "miss",
   "provider_called": true,
   "prompt_tokens": 612,
   "completion_tokens": 4,
@@ -256,7 +257,7 @@ These tests require no model download, external service, or API key. CI also bui
 - Dense vectors are L2-normalized, so inner product in FAISS corresponds to cosine similarity.
 - Reciprocal Rank Fusion combines dense and lexical rankings without requiring score calibration.
 - The service separates query embedding from FAISS search so both stages can be measured independently.
-- Repeated successful queries are cached by normalized question and retrieval depth; `use_cache=false` provides an explicit uncached benchmark/control path.
+- Repeated successful queries are cached by normalized question and retrieval depth; every result reports `hit`, `miss`, or `bypass`, so disabled and intentionally skipped caches are not counted as misses.
 - Liveness remains available when model initialization fails, while readiness correctly returns HTTP 503.
 - API failures return a stable public error and keep backend details in server logs.
 - Upstream generation failures retain a typed error signal, return HTTP 502, increment
