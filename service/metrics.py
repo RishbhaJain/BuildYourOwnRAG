@@ -23,7 +23,8 @@ class ServiceMetrics:
         )
         self.failures = Counter(
             "rag_request_failures_total",
-            "RAG answer requests that raised an exception.",
+            "RAG answer requests that raised an exception by failure category.",
+            ("category",),
             registry=self.registry,
         )
         self.fallbacks = Counter(
@@ -93,6 +94,7 @@ class ServiceMetrics:
         cache_result: str,
         prompt_tokens: int | None,
         completion_tokens: int | None,
+        total_tokens: int | None,
         estimated_cost_usd: float | None,
     ) -> None:
         self.requests.labels(status="success").inc()
@@ -107,12 +109,14 @@ class ServiceMetrics:
             self.provider_tokens.labels(type="prompt").inc(prompt_tokens)
         if completion_tokens:
             self.provider_tokens.labels(type="completion").inc(completion_tokens)
+        if total_tokens:
+            self.provider_tokens.labels(type="total").inc(total_tokens)
         if estimated_cost_usd:
             self.provider_cost.inc(estimated_cost_usd)
 
-    def observe_failure(self, elapsed_seconds: float) -> None:
+    def observe_failure(self, elapsed_seconds: float, category: str) -> None:
         self.requests.labels(status="error").inc()
-        self.failures.inc()
+        self.failures.labels(category=category).inc()
         self.request_latency.observe(elapsed_seconds)
 
     def render(self) -> tuple[bytes, str]:

@@ -68,6 +68,7 @@ def test_pipeline_reports_stage_timings_and_fused_chunk_ids():
         "total": 11.0,
     }
     assert result.fallback is False
+    assert result.cache_status == "bypass"
 
 
 def test_pipeline_marks_unknown_as_fallback():
@@ -102,10 +103,13 @@ def test_pipeline_cache_skips_retrieval_and_generation_on_repeat_query():
     bypassed = pipeline.answer("Repeated question", use_cache=False)
 
     assert first.cache_hit is False
+    assert first.cache_status == "miss"
     assert first.provider_called is True
     assert second.cache_hit is True
+    assert second.cache_status == "hit"
     assert second.provider_called is False
     assert second.estimated_cost_usd == 0.0
     assert set(second.timings_seconds) == {"cache_lookup", "total"}
     assert bypassed.cache_hit is False
+    assert bypassed.cache_status == "bypass"
     assert calls["generation"] == 2

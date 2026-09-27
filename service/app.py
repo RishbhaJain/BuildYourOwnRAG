@@ -6,12 +6,14 @@ import logging
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
+from llms.llm_pipeline import ProviderGenerationError
 from service.metrics import ServiceMetrics
 from service.pipeline import RAGPipeline, create_pipeline_from_environment
 
@@ -39,6 +41,7 @@ class AnswerResponse(BaseModel):
     fallback: bool
     timings_ms: dict[str, float]
     cache_hit: bool
+    cache_status: Literal["hit", "miss", "bypass"]
     provider_called: bool
     prompt_tokens: int | None
     completion_tokens: int | None
@@ -115,8 +118,18 @@ def create_app(
                 request.top_k,
                 request.use_cache,
             )
+        except ProviderGenerationError:
+            metrics.observe_failure(
+                time.perf_counter() - started,
+                category="provider",
+            )
+            logger.exception("LLM provider failed during RAG inference.")
+            raise HTTPException(status_code=502, detail="LLM provider failed") from None
         except Exception:
-            metrics.observe_failure(time.perf_counter() - started)
+            metrics.observe_failure(
+                time.perf_counter() - started,
+                category="internal",
+            )
             logger.exception("RAG answer request failed.")
             raise HTTPException(
                 status_code=500, detail="RAG inference failed"
@@ -126,15 +139,10 @@ def create_app(
             result.timings_seconds,
             result.fallback,
             time.perf_counter() - started,
-            cache_result=(
-                "bypass"
-                if not request.use_cache
-                else "hit"
-                if result.cache_hit
-                else "miss"
-            ),
+            cache_result=result.cache_status,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
             estimated_cost_usd=result.estimated_cost_usd,
         )
         return AnswerResponse(
@@ -146,6 +154,7 @@ def create_app(
                 for stage, seconds in result.timings_seconds.items()
             },
             cache_hit=result.cache_hit,
+            cache_status=result.cache_status,
             provider_called=result.provider_called,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,

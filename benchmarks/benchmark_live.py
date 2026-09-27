@@ -22,6 +22,10 @@ class Sample:
     failure: str | None = None
 
 
+def _http_failure_category(status_code: int) -> str:
+    return "provider" if status_code == 502 else f"http_{status_code}"
+
+
 def _request_answer(
     base_url: str,
     question: str,
@@ -43,7 +47,11 @@ def _request_answer(
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        return Sample(time.perf_counter() - started, None, f"http_{exc.code}")
+        return Sample(
+            time.perf_counter() - started,
+            None,
+            _http_failure_category(exc.code),
+        )
     except TimeoutError:
         return Sample(time.perf_counter() - started, None, "timeout")
     except urllib.error.URLError as exc:

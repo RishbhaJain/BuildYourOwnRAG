@@ -21,6 +21,10 @@ class GenerationResult:
     ttft_seconds: float | None = None
 
 
+class ProviderGenerationError(RuntimeError):
+    """Raised when the upstream model provider cannot produce a response."""
+
+
 SYSTEM_PROMPT = (
     "You are a factoid QA assistant for UC Berkeley EECS. "
     "Given context passages, answer the question in as few words as possible "
@@ -122,8 +126,8 @@ def generate_answer_with_metrics(
             max_tokens=max_tokens,
             temperature=0.0,
         )
-    except (RuntimeError, ValueError):
-        return GenerationResult(answer=fallback)
+    except RuntimeError as exc:
+        raise ProviderGenerationError("LLM provider request failed") from exc
 
     answer = postprocess_answer(response.content) or fallback
     return GenerationResult(
