@@ -1,4 +1,14 @@
-from benchmarks.benchmark_live import Sample, _http_failure_category, summarize
+import sys
+
+import pytest
+
+from benchmarks.benchmark_live import (
+    Sample,
+    _http_failure_category,
+    benchmark,
+    main,
+    summarize,
+)
 
 
 def test_summary_reports_latency_usage_cost_cache_and_failures():
@@ -45,3 +55,49 @@ def test_summary_reports_latency_usage_cost_cache_and_failures():
 def test_http_502_is_reported_as_provider_failure():
     assert _http_failure_category(502) == "provider"
     assert _http_failure_category(500) == "http_500"
+
+
+def test_empty_workload_fails_before_contacting_service(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("an invalid workload must not contact the service")
+
+    monkeypatch.setattr("benchmarks.benchmark_live._check_ready", fail_if_called)
+    with pytest.raises(ValueError, match="no benchmark questions"):
+        benchmark("http://localhost:8000", [], [1], 1.0)
+    with pytest.raises(ValueError, match="empty benchmark workload"):
+        summarize([], 1.0)
+
+
+@pytest.mark.parametrize("levels", [[], [0], [-1], [1, 0]])
+def test_invalid_concurrency_fails_before_contacting_service(monkeypatch, levels):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("an invalid workload must not contact the service")
+
+    monkeypatch.setattr("benchmarks.benchmark_live._check_ready", fail_if_called)
+    with pytest.raises(ValueError, match="positive integers"):
+        benchmark("http://localhost:8000", ["question"], levels, 1.0)
+
+
+@pytest.mark.parametrize(
+    ("contents", "extra_args", "expected_error"),
+    [
+        ("", [], "no benchmark questions"),
+        ("question\n", ["--limit", "0"], "--limit must be a positive integer"),
+    ],
+)
+def test_cli_rejects_empty_workloads(
+    monkeypatch, tmp_path, capsys, contents, extra_args, expected_error
+):
+    questions_file = tmp_path / "questions.txt"
+    questions_file.write_text(contents, encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["benchmark_live", "--questions", str(questions_file), *extra_args],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main()
+
+    assert exc.value.code == 2
+    assert expected_error in capsys.readouterr().err

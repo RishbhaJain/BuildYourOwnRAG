@@ -95,6 +95,10 @@ def _percentile(values: list[float], percentile: float) -> float | None:
 
 
 def summarize(samples: list[Sample], wall_seconds: float) -> dict[str, object]:
+    if not samples:
+        raise ValueError("cannot summarize an empty benchmark workload")
+    if wall_seconds <= 0:
+        raise ValueError("benchmark wall time must be positive")
     successes = [sample for sample in samples if sample.payload is not None]
     latencies_ms = [sample.elapsed_seconds * 1_000 for sample in successes]
     ttft_ms = [
@@ -168,6 +172,12 @@ def benchmark(
     concurrency_levels: list[int],
     timeout_seconds: float,
 ) -> dict[str, object]:
+    if not questions:
+        raise ValueError("questions file contains no benchmark questions")
+    if not concurrency_levels or any(level < 1 for level in concurrency_levels):
+        raise ValueError("concurrency levels must be positive integers")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout must be positive")
     _check_ready(base_url, timeout_seconds)
     results = []
     for concurrency in concurrency_levels:
@@ -229,18 +239,24 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
+    if args.limit < 1:
+        parser.error("--limit must be a positive integer")
+
     questions = [
         line.strip()
         for line in args.questions.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ][: args.limit]
-    concurrency_levels = [int(value) for value in args.concurrency.split(",")]
-    result = benchmark(
-        args.base_url,
-        questions,
-        concurrency_levels,
-        args.timeout,
-    )
+    try:
+        concurrency_levels = [int(value) for value in args.concurrency.split(",")]
+        result = benchmark(
+            args.base_url,
+            questions,
+            concurrency_levels,
+            args.timeout,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     rendered = json.dumps(result, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
