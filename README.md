@@ -20,6 +20,25 @@ python run_evaluation.py predictions.txt
 
 The evaluator applies SQuAD-style normalization, reports normalized exact match and token-level F1, and supports multiple reference answers.
 
+### Failure attribution
+
+The error analyzer traces every incorrect answer to the earliest failed RAG stage:
+missing evidence in the corpus, retrieval miss, generator fallback, surface-format
+mismatch, or generation failure despite relevant context. This turns aggregate EM
+and F1 into actionable error budgets for corpus, retrieval, and generation work.
+
+```bash
+python analyze_errors.py \
+  --predictions predictions.local.txt \
+  --retriever hybrid \
+  --top-k 20 \
+  --output analysis/error_analysis.json
+```
+
+The core taxonomy is deterministic and credential-free. Add `--llm-judge` only to
+adjudicate semantically equivalent answers that lexical metrics may under-credit;
+the original category and deterministic scores remain in the artifact.
+
 ### Serving overhead
 
 | Configuration | Requests | p50 latency | p95 latency | Throughput |
@@ -83,6 +102,7 @@ flowchart TD
 - **Measured optimization:** a bounded TTL response cache reports hit/miss/bypass metrics and avoids repeat retrieval, generation, token usage, and provider cost.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
+- **Stage-level failure analysis:** deterministic attribution separates corpus, retrieval, fallback, formatting, and generation errors, with an optional audited LLM verdict.
 
 ## Quick start
 
@@ -224,6 +244,7 @@ Mock mode exists only for integration testing. It does not report model quality 
 python -m pip install -r requirements-dev.txt
 python -m pytest -q \
   tests/test_evaluation.py \
+  tests/test_analyze_errors.py \
   tests/test_cache.py \
   tests/test_llm.py \
   tests/test_live_benchmark.py \
@@ -248,6 +269,7 @@ These tests require no model download, external service, or API key. CI also bui
 | `benchmarks/` | Reproducible mock serving benchmark and result artifacts |
 | `run_pipeline.py` | Orchestrate offline retrieval and parallel generation |
 | `run_evaluation.py` | Compute exact match and token F1 |
+| `analyze_errors.py` | Attribute failures to corpus, retrieval, and generation stages |
 | `tests/` | Unit and integration tests |
 | `Dockerfile` | Production and mock-mode container build |
 
