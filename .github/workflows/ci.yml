@@ -32,6 +32,7 @@ jobs:
           python -m ruff format --check \
             service \
             benchmarks \
+            analyze_errors.py \
             llm.py \
             llms/llm_pipeline.py \
             tests/test_cache.py \
@@ -43,6 +44,7 @@ jobs:
           python -m ruff check \
             service \
             benchmarks \
+            analyze_errors.py \
             llm.py \
             llms/llm_pipeline.py \
             tests/test_cache.py \
@@ -56,6 +58,7 @@ jobs:
         run: |
           python -m pytest -q \
             tests/test_evaluation.py \
+            tests/test_analyze_errors.py \
             tests/test_cache.py \
             tests/test_llm.py \
             tests/test_live_benchmark.py \
