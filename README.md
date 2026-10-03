@@ -20,6 +20,31 @@ python run_evaluation.py predictions.txt
 
 The evaluator applies SQuAD-style normalization, reports normalized exact match and token-level F1, and supports multiple reference answers.
 
+### Retrieval quality
+
+Evaluate dense, BM25, hybrid, or future ranking traces with the same deterministic
+metrics: Hit Rate, Recall, Mean Reciprocal Rank (MRR), and nDCG at configurable
+cutoffs. Each JSONL record provides a stable query ID, one or more relevant chunk
+IDs, and the retriever's ranked chunk IDs:
+
+```json
+{"query_id":"q-001","relevant_chunk_ids":["chunk-12"],"retrieved_chunk_ids":["chunk-7","chunk-12"]}
+```
+
+```bash
+python retrieval_evaluation.py retrieval_run.jsonl \
+  --ks 1,5,10 \
+  --output results/retrieval_metrics.json \
+  --minimum recall@5=0.80 \
+  --minimum mrr@10=0.70
+```
+
+The versioned result artifact contains macro metrics and per-query diagnostics.
+Malformed labels, duplicate query IDs, and duplicate ranked chunks are rejected.
+A failed minimum returns a nonzero status, so measured baselines can become CI
+regression gates. No retrieval score is claimed until curated relevance labels
+are supplied.
+
 ### Failure attribution
 
 The error analyzer traces every incorrect answer to the earliest failed RAG stage:
@@ -102,6 +127,7 @@ flowchart TD
 - **Measured optimization:** a bounded TTL response cache reports hit/miss/bypass metrics and avoids repeat retrieval, generation, token usage, and provider cost.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
+- **Retrieval quality gates:** comparable Hit Rate, Recall, MRR, and nDCG reports can fail CI when a measured retriever regresses.
 - **Stage-level failure analysis:** deterministic attribution separates corpus, retrieval, fallback, formatting, and generation errors, with an optional audited LLM verdict.
 
 ## Quick start
@@ -244,6 +270,7 @@ Mock mode exists only for integration testing. It does not report model quality 
 python -m pip install -r requirements-dev.txt
 python -m pytest -q \
   tests/test_evaluation.py \
+  tests/test_retrieval_evaluation.py \
   tests/test_analyze_errors.py \
   tests/test_cache.py \
   tests/test_llm.py \
@@ -269,6 +296,7 @@ These tests require no model download, external service, or API key. CI also bui
 | `benchmarks/` | Reproducible mock serving benchmark and result artifacts |
 | `run_pipeline.py` | Orchestrate offline retrieval and parallel generation |
 | `run_evaluation.py` | Compute exact match and token F1 |
+| `retrieval_evaluation.py` | Compute ranking metrics and enforce retrieval regression thresholds |
 | `analyze_errors.py` | Attribute failures to corpus, retrieval, and generation stages |
 | `tests/` | Unit and integration tests |
 | `Dockerfile` | Production and mock-mode container build |
@@ -289,6 +317,7 @@ These tests require no model download, external service, or API key. CI also bui
 
 - The benchmark contains 100 domain-specific factoid questions, so the scores do not imply performance on open-domain QA.
 - Exact match and token F1 emphasize lexical overlap and can under-credit semantically equivalent answers.
+- Retrieval metrics require curated relevance labels; the evaluator does not infer or fabricate them.
 - The committed latency benchmark measures deterministic serving overhead, not live model or provider latency.
 - Full generation requires an OpenRouter key, local model storage, and enough memory for the embedding model.
 - Authentication, rate limiting, distributed tracing, and multi-worker Prometheus aggregation are not yet implemented.
