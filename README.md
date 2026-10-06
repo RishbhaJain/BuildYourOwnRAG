@@ -64,6 +64,30 @@ The core taxonomy is deterministic and credential-free. Add `--llm-judge` only t
 adjudicate semantically equivalent answers that lexical metrics may under-credit;
 the original category and deterministic scores remain in the artifact.
 
+### Retrieved-evidence support
+
+Measure how much of each generated answer is lexically supported by its retrieved
+context. The JSONL trace keeps the evaluated answer and context together:
+
+```json
+{"query_id":"q-001","answer":"Dan Garcia","contexts":[{"chunk_id":"chunk-12","text":"Professor Dan Garcia leads the GamesCrafters group."}]}
+```
+
+```bash
+python grounding_evaluation.py generation_traces.jsonl \
+  --output results/grounding_metrics.json \
+  --minimum mean_token_support=0.90 \
+  --minimum fully_supported_answer_rate=0.80 \
+  --maximum unsupported_number_rate=0.05
+```
+
+The versioned report includes abstention rate, answer-token support, fully
+supported-answer rate, unsupported numbers, per-query diagnostics, source-file
+SHA-256, and optional CI thresholds. Abstentions are tracked separately rather
+than rewarded as grounded answers. This lexical diagnostic is reproducible and
+credential-free, but it is not semantic entailment or proof of factual accuracy;
+paraphrases may be under-counted.
+
 ### Serving overhead
 
 | Configuration | Requests | p50 latency | p95 latency | Throughput |
@@ -129,6 +153,7 @@ flowchart TD
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
 - **Retrieval quality gates:** comparable Hit Rate, Recall, MRR, and nDCG reports can fail CI when a measured retriever regresses.
 - **Stage-level failure analysis:** deterministic attribution separates corpus, retrieval, fallback, formatting, and generation errors, with an optional audited LLM verdict.
+- **Grounding regression gates:** versioned lexical-support reports surface unsupported answer tokens and numbers without claiming semantic faithfulness.
 
 ## Quick start
 
@@ -270,6 +295,7 @@ Mock mode exists only for integration testing. It does not report model quality 
 python -m pip install -r requirements-dev.txt
 python -m pytest -q \
   tests/test_evaluation.py \
+  tests/test_grounding_evaluation.py \
   tests/test_retrieval_evaluation.py \
   tests/test_analyze_errors.py \
   tests/test_cache.py \
@@ -297,6 +323,7 @@ These tests require no model download, external service, or API key. CI also bui
 | `run_pipeline.py` | Orchestrate offline retrieval and parallel generation |
 | `run_evaluation.py` | Compute exact match and token F1 |
 | `retrieval_evaluation.py` | Compute ranking metrics and enforce retrieval regression thresholds |
+| `grounding_evaluation.py` | Diagnose lexical answer support and enforce grounding regression thresholds |
 | `analyze_errors.py` | Attribute failures to corpus, retrieval, and generation stages |
 | `tests/` | Unit and integration tests |
 | `Dockerfile` | Production and mock-mode container build |
@@ -318,6 +345,7 @@ These tests require no model download, external service, or API key. CI also bui
 - The benchmark contains 100 domain-specific factoid questions, so the scores do not imply performance on open-domain QA.
 - Exact match and token F1 emphasize lexical overlap and can under-credit semantically equivalent answers.
 - Retrieval metrics require curated relevance labels; the evaluator does not infer or fabricate them.
+- Grounding diagnostics measure lexical evidence coverage, not semantic entailment; supported wording can still be factually wrong.
 - The committed latency benchmark measures deterministic serving overhead, not live model or provider latency.
 - Full generation requires an OpenRouter key, local model storage, and enough memory for the embedding model.
 - Authentication, rate limiting, distributed tracing, and multi-worker Prometheus aggregation are not yet implemented.
