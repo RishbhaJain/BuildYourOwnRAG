@@ -154,6 +154,24 @@ flowchart TD
 - **Retrieval quality gates:** comparable Hit Rate, Recall, MRR, and nDCG reports can fail CI when a measured retriever regresses.
 - **Stage-level failure analysis:** deterministic attribution separates corpus, retrieval, fallback, formatting, and generation errors, with an optional audited LLM verdict.
 - **Grounding regression gates:** versioned lexical-support reports surface unsupported answer tokens and numbers without claiming semantic faithfulness.
+- **Artifact lineage:** startup verifies chunk and embedding hashes, row counts, vector dimensions, dtype, embedding model, and query prefix before loading retrieval state.
+
+### Retrieval artifact integrity
+
+`data/retrieval_manifest.json` binds the checked-in chunks and embeddings to the
+embedding model and query prefix that produced them. Production startup fails
+closed if either artifact changes, their row counts diverge, the NPY payload is
+truncated, or a stale FAISS index has the wrong vector count or dimensions.
+
+Validate the checked-in artifacts without loading NumPy, FAISS, or the embedding
+model:
+
+```bash
+python validate_retrieval_artifacts.py
+```
+
+Running `python run_embedder.py` regenerates the manifest after writing a new
+embedding array, so a changed corpus cannot silently reuse stale vectors.
 
 ## Quick start
 

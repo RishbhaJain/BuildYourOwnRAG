@@ -8,12 +8,18 @@ At query time, encodes the question and returns top-k chunks by cosine similarit
 import json
 import logging
 import os
+from pathlib import Path
 
 import faiss
 import numpy as np
 
 import config
 from embedder.embedder import Embedder
+from retriever.artifacts import (
+    ArtifactIntegrityError,
+    validate_manifest,
+    write_manifest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +30,12 @@ class DenseRetriever:
         chunks_path: str = config.CHUNKS_JSONL_PATH,
         embeddings_path: str = config.EMBEDDINGS_PATH,
         index_path: str = config.FAISS_INDEX_PATH,
+        manifest_path: str = config.RETRIEVAL_MANIFEST_PATH,
     ):
         self.chunks_path = chunks_path
         self.embeddings_path = embeddings_path
         self.index_path = index_path
+        self.manifest_path = manifest_path
         self.chunks = []
         self.index = None
         self.embedder = Embedder()
@@ -50,6 +58,13 @@ class DenseRetriever:
 
         os.makedirs(os.path.dirname(self.embeddings_path) or ".", exist_ok=True)
         np.save(self.embeddings_path, embeddings)
+        write_manifest(
+            Path(self.manifest_path),
+            Path(self.chunks_path),
+            Path(self.embeddings_path),
+            embedding_model=self.embedder.model_name,
+            query_prefix=self.embedder.query_prefix,
+        )
         logger.info(
             "Saved embeddings (%s) to %s", embeddings.shape, self.embeddings_path
         )
@@ -59,6 +74,13 @@ class DenseRetriever:
         """Build a FAISS index from embeddings and save to disk."""
         if embeddings is None:
             if os.path.exists(self.embeddings_path):
+                validate_manifest(
+                    Path(self.manifest_path),
+                    Path(self.chunks_path),
+                    Path(self.embeddings_path),
+                    embedding_model=self.embedder.model_name,
+                    query_prefix=self.embedder.query_prefix,
+                )
                 embeddings = np.load(self.embeddings_path)
                 logger.info("Loaded embeddings from %s", self.embeddings_path)
             else:
@@ -80,9 +102,24 @@ class DenseRetriever:
 
     def load_index(self):
         """Load a pre-built FAISS index and chunk metadata."""
+        manifest = validate_manifest(
+            Path(self.manifest_path),
+            Path(self.chunks_path),
+            Path(self.embeddings_path),
+            embedding_model=self.embedder.model_name,
+            query_prefix=self.embedder.query_prefix,
+        )
         if not self.chunks:
             self.load_chunks()
         self.index = faiss.read_index(self.index_path)
+        expected_rows = manifest["embeddings"]["rows"]
+        expected_dimensions = manifest["embeddings"]["dimensions"]
+        if self.index.ntotal != expected_rows or self.index.d != expected_dimensions:
+            raise ArtifactIntegrityError(
+                "FAISS index shape does not match the retrieval artifact manifest: "
+                f"index=({self.index.ntotal}, {self.index.d}), "
+                f"manifest=({expected_rows}, {expected_dimensions})"
+            )
         logger.info(
             "Loaded FAISS index (%d vectors) from %s",
             self.index.ntotal,
