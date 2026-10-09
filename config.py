@@ -61,6 +61,7 @@ EMBEDDING_BATCH_SIZE = 32
 EMBEDDING_QUERY_PREFIX = ""
 EMBEDDINGS_PATH = "data/embeddings.npy"
 FAISS_INDEX_PATH = "data/faiss_index.bin"
+RETRIEVAL_MANIFEST_PATH = "data/retrieval_manifest.json"
 DENSE_TOP_K = 5
 
 # --- Chunking ---

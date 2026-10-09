@@ -13,20 +13,38 @@ import time
 import config
 from retriever.dense_retriever import DenseRetriever
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s  %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s  %(message)s"
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build embeddings and FAISS index from chunks.")
-    parser.add_argument("--chunks", default=config.CHUNKS_JSONL_PATH, help="Path to chunks JSONL")
-    parser.add_argument("--embeddings", default=config.EMBEDDINGS_PATH, help="Output path for embeddings .npy")
-    parser.add_argument("--index", default=config.FAISS_INDEX_PATH, help="Output path for FAISS index")
+    parser = argparse.ArgumentParser(
+        description="Build embeddings and FAISS index from chunks."
+    )
+    parser.add_argument(
+        "--chunks", default=config.CHUNKS_JSONL_PATH, help="Path to chunks JSONL"
+    )
+    parser.add_argument(
+        "--embeddings",
+        default=config.EMBEDDINGS_PATH,
+        help="Output path for embeddings .npy",
+    )
+    parser.add_argument(
+        "--index", default=config.FAISS_INDEX_PATH, help="Output path for FAISS index"
+    )
+    parser.add_argument(
+        "--manifest",
+        default=config.RETRIEVAL_MANIFEST_PATH,
+        help="Output path for retrieval artifact manifest",
+    )
     args = parser.parse_args()
 
     retriever = DenseRetriever(
         chunks_path=args.chunks,
         embeddings_path=args.embeddings,
         index_path=args.index,
+        manifest_path=args.manifest,
     )
 
     t0 = time.time()

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "embedding_model": "models/gte-modernbert-base-fp16",
+  "query_prefix": "",
+  "chunks": {
+    "path": "data/chunks.jsonl",
+    "sha256": "932dc1ea969075c9fa2e6c066f9c700bfc8dab982437fc83fe3f7597029bdb47",
+    "rows": 46415
+  },
+  "embeddings": {
+    "path": "data/embeddings.npy",
+    "sha256": "45d9916b035ac52eff780d0e6ead15a92a84b48bbc212e4306fe2e1e7bc3edae",
+    "rows": 46415,
+    "dimensions": 768,
+    "dtype": "<f2"
+  }
+}
