@@ -37,6 +37,7 @@ jobs:
             validate_retrieval_artifacts.py \
             retrieval_evaluation.py \
             llm.py \
+            llms/context_safety.py \
             llms/llm_pipeline.py \
             tests/test_cache.py \
             tests/test_live_benchmark.py \
@@ -44,6 +45,7 @@ jobs:
             tests/test_retrieval_artifacts.py \
             tests/test_retrieval_evaluation.py \
             tests/test_llm.py \
+            tests/test_context_safety.py \
             tests/test_service_api.py \
             tests/test_service_pipeline.py \
             retriever/artifacts.py \
@@ -56,12 +58,14 @@ jobs:
             grounding_evaluation.py \
             validate_retrieval_artifacts.py \
             llm.py \
+            llms/context_safety.py \
             llms/llm_pipeline.py \
             tests/test_cache.py \
             tests/test_live_benchmark.py \
             tests/test_grounding_evaluation.py \
             tests/test_retrieval_artifacts.py \
             tests/test_llm.py \
+            tests/test_context_safety.py \
             tests/test_service_api.py \
             tests/test_service_pipeline.py \
             retriever/artifacts.py \
@@ -77,6 +81,7 @@ jobs:
             tests/test_retrieval_evaluation.py \
             tests/test_analyze_errors.py \
             tests/test_cache.py \
+            tests/test_context_safety.py \
             tests/test_llm.py \
             tests/test_live_benchmark.py \
             tests/test_service_pipeline.py \

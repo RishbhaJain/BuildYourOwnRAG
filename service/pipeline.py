@@ -47,6 +47,7 @@ class RAGResult:
     total_tokens: int | None = None
     estimated_cost_usd: float | None = None
     ttft_seconds: float | None = None
+    safety_filtered_chunk_ids: tuple[str, ...] = ()
 
 
 class RAGPipeline:
@@ -113,6 +114,7 @@ class RAGPipeline:
                     total_tokens=0,
                     estimated_cost_usd=0.0,
                     ttft_seconds=0.0,
+                    safety_filtered_chunk_ids=cached.safety_filtered_chunk_ids,
                 )
 
         query_vectors = self._measure(
@@ -157,6 +159,8 @@ class RAGPipeline:
                 "total_tokens": generated.total_tokens,
                 "estimated_cost_usd": generated.cost_usd,
                 "ttft_seconds": generated.ttft_seconds,
+                "provider_called": generated.provider_called,
+                "safety_filtered_chunk_ids": generated.safety_filtered_chunk_ids,
             }
         normalized_answer = answer.strip()
         result = RAGResult(
