@@ -1,3 +1,4 @@
+from llms.llm_pipeline import GenerationResult
 from service.cache import TTLCache
 from service.pipeline import RAGPipeline
 
@@ -82,6 +83,24 @@ def test_pipeline_marks_unknown_as_fallback():
 
     assert result.answer == "Unknown"
     assert result.fallback is True
+
+
+def test_pipeline_propagates_context_safety_metadata_and_provider_short_circuit():
+    pipeline = RAGPipeline(
+        dense=FakeDenseRetriever(),
+        sparse=FakeSparseRetriever(),
+        generator=lambda question, passages: GenerationResult(
+            answer="Unknown",
+            provider_called=False,
+            safety_filtered_chunk_ids=("shared", "dense-1"),
+        ),
+    )
+
+    result = pipeline.answer("Question")
+
+    assert result.fallback is True
+    assert result.provider_called is False
+    assert result.safety_filtered_chunk_ids == ("shared", "dense-1")
 
 
 def test_pipeline_cache_skips_retrieval_and_generation_on_repeat_query():

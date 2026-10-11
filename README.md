@@ -155,6 +155,7 @@ flowchart TD
 - **Stage-level failure analysis:** deterministic attribution separates corpus, retrieval, fallback, formatting, and generation errors, with an optional audited LLM verdict.
 - **Grounding regression gates:** versioned lexical-support reports surface unsupported answer tokens and numbers without claiming semantic faithfulness.
 - **Artifact lineage:** startup verifies chunk and embedding hashes, row counts, vector dimensions, dtype, embedding model, and query prefix before loading retrieval state.
+- **Untrusted-context safety:** high-confidence prompt-injection signatures are quarantined before generation, document boundaries are escaped, all-filtered requests avoid the provider, and content-free filter events are exposed through the API and Prometheus.
 
 ### Retrieval artifact integrity
 
@@ -172,6 +173,20 @@ python validate_retrieval_artifacts.py
 
 Running `python run_embedder.py` regenerates the manifest after writing a new
 embedding array, so a changed corpus cannot silently reuse stale vectors.
+
+### Untrusted retrieved content
+
+Retrieved web pages are treated as data rather than instructions. Before a passage
+reaches the provider, deterministic rules quarantine direct instruction overrides,
+role-token impersonation, and secret-exfiltration requests. Remaining titles,
+content, chunk IDs, and questions are escaped inside explicit document boundaries.
+If every retrieved passage is quarantined, the pipeline returns `Unknown` without
+calling the provider. Responses expose only filtered chunk IDs, while Prometheus
+tracks the count without logging passage text.
+
+This is a narrow, auditable defense against high-confidence signatures, not a claim
+that arbitrary prompt injection is solved. Model-level adversarial evaluation and
+semantic detectors remain useful follow-up work.
 
 ## Quick start
 
@@ -245,6 +260,7 @@ The response includes the answer, fallback status, selected chunk IDs, and stage
 {
   "answer": "Dan Garcia",
   "retrieved_chunk_ids": ["chunk-123", "chunk-456"],
+  "safety_filtered_chunk_ids": [],
   "fallback": false,
   "cache_hit": false,
   "cache_status": "miss",
@@ -317,6 +333,7 @@ python -m pytest -q \
   tests/test_retrieval_evaluation.py \
   tests/test_analyze_errors.py \
   tests/test_cache.py \
+  tests/test_context_safety.py \
   tests/test_llm.py \
   tests/test_live_benchmark.py \
   tests/test_service_pipeline.py \

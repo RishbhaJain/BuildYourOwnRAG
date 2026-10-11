@@ -49,6 +49,11 @@ class ServiceMetrics:
             "Provider-reported generation cost in US dollars.",
             registry=self.registry,
         )
+        self.context_safety_filtered = Counter(
+            "rag_context_safety_filtered_chunks_total",
+            "Retrieved chunks quarantined by deterministic context-safety rules.",
+            registry=self.registry,
+        )
         self.request_latency = Histogram(
             "rag_request_latency_seconds",
             "End-to-end latency for answer requests.",
@@ -96,6 +101,7 @@ class ServiceMetrics:
         completion_tokens: int | None,
         total_tokens: int | None,
         estimated_cost_usd: float | None,
+        safety_filtered_chunks: int = 0,
     ) -> None:
         self.requests.labels(status="success").inc()
         self.request_latency.observe(request_elapsed_seconds)
@@ -113,6 +119,8 @@ class ServiceMetrics:
             self.provider_tokens.labels(type="total").inc(total_tokens)
         if estimated_cost_usd:
             self.provider_cost.inc(estimated_cost_usd)
+        if safety_filtered_chunks:
+            self.context_safety_filtered.inc(safety_filtered_chunks)
 
     def observe_failure(self, elapsed_seconds: float, category: str) -> None:
         self.requests.labels(status="error").inc()

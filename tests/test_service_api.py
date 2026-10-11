@@ -21,6 +21,7 @@ def test_health_readiness_answer_and_metrics():
         assert payload["cache_hit"] is False
         assert payload["cache_status"] == "miss"
         assert payload["provider_called"] is True
+        assert payload["safety_filtered_chunk_ids"] == []
         assert payload["retrieved_chunk_ids"] == [
             "mock-dense-1",
             "mock-sparse-1",
@@ -124,3 +125,22 @@ def test_provider_total_tokens_are_exposed_in_metrics():
         assert 'rag_provider_tokens_total{type="prompt"} 11.0' in metrics
         assert 'rag_provider_tokens_total{type="completion"} 7.0' in metrics
         assert 'rag_provider_tokens_total{type="total"} 18.0' in metrics
+
+
+def test_context_safety_quarantine_is_exposed_without_content():
+    class SafetyPipeline:
+        def answer(self, question, top_k, use_cache):
+            return RAGResult(
+                answer="Safe answer",
+                retrieved_chunk_ids=["safe"],
+                timings_seconds={"generation": 0.01, "total": 0.02},
+                fallback=False,
+                safety_filtered_chunk_ids=("hostile",),
+            )
+
+    with TestClient(create_app(lambda: SafetyPipeline())) as client:
+        response = client.post("/answer", json={"question": "test"})
+        assert response.status_code == 200
+        assert response.json()["safety_filtered_chunk_ids"] == ["hostile"]
+        metrics = client.get("/metrics").text
+        assert "rag_context_safety_filtered_chunks_total 1.0" in metrics
