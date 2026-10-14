@@ -1,3 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
+import pytest
 from fastapi.testclient import TestClient
 
 from llms.llm_pipeline import ProviderGenerationError
@@ -144,3 +148,63 @@ def test_context_safety_quarantine_is_exposed_without_content():
         assert response.json()["safety_filtered_chunk_ids"] == ["hostile"]
         metrics = client.get("/metrics").text
         assert "rag_context_safety_filtered_chunks_total 1.0" in metrics
+
+
+def test_overload_is_rejected_without_starting_extra_inference():
+    class BlockingPipeline:
+        def __init__(self):
+            self.entered = Event()
+            self.release = Event()
+            self.calls = 0
+
+        def answer(self, question, top_k, use_cache):
+            self.calls += 1
+            self.entered.set()
+            assert self.release.wait(timeout=2)
+            return RAGResult(
+                answer="Completed answer",
+                retrieved_chunk_ids=[],
+                timings_seconds={"generation": 0.01, "total": 0.02},
+                fallback=False,
+            )
+
+    pipeline = BlockingPipeline()
+    app = create_app(
+        lambda: pipeline,
+        max_concurrent_requests=1,
+        queue_timeout_seconds=0.01,
+    )
+
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as executor:
+        first = executor.submit(client.post, "/answer", json={"question": "first"})
+        assert pipeline.entered.wait(timeout=1)
+
+        overloaded = client.post("/answer", json={"question": "second"})
+        assert overloaded.status_code == 503
+        assert overloaded.json() == {"detail": "RAG service is at capacity"}
+        assert overloaded.headers["Retry-After"] == "1"
+        assert pipeline.calls == 1
+
+        busy_metrics = client.get("/metrics").text
+        assert "rag_in_flight_requests 1.0" in busy_metrics
+        assert "rag_overload_rejections_total 1.0" in busy_metrics
+        assert 'rag_requests_total{status="overloaded"} 1.0' in busy_metrics
+        assert (
+            'rag_admission_wait_seconds_count{outcome="rejected"} 1.0' in busy_metrics
+        )
+
+        pipeline.release.set()
+        assert first.result(timeout=1).status_code == 200
+        assert "rag_in_flight_requests 0.0" in client.get("/metrics").text
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"max_concurrent_requests": 0}, "must be at least 1"),
+        ({"queue_timeout_seconds": -0.1}, "must not be negative"),
+    ],
+)
+def test_invalid_admission_configuration_fails_fast(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        create_app(build_mock_pipeline, **kwargs)
