@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import math
+import os
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -14,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from llms.llm_pipeline import ProviderGenerationError
+from service.admission import RequestAdmissionController
 from service.metrics import ServiceMetrics
 from service.pipeline import RAGPipeline, create_pipeline_from_environment
 
@@ -53,8 +56,25 @@ class AnswerResponse(BaseModel):
 
 def create_app(
     pipeline_factory: PipelineFactory = create_pipeline_from_environment,
+    *,
+    max_concurrent_requests: int | None = None,
+    queue_timeout_seconds: float | None = None,
 ) -> FastAPI:
     metrics = ServiceMetrics()
+    max_concurrent_requests = (
+        max_concurrent_requests
+        if max_concurrent_requests is not None
+        else int(os.getenv("RAG_MAX_CONCURRENT_REQUESTS", "4"))
+    )
+    queue_timeout_seconds = (
+        queue_timeout_seconds
+        if queue_timeout_seconds is not None
+        else float(os.getenv("RAG_QUEUE_TIMEOUT_SECONDS", "0.05"))
+    )
+    admission = RequestAdmissionController(
+        max_concurrent_requests=max_concurrent_requests,
+        queue_timeout_seconds=queue_timeout_seconds,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -78,6 +98,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.metrics = metrics
+    app.state.admission = admission
 
     @app.get("/")
     async def root():
@@ -112,6 +133,17 @@ def create_app(
             raise HTTPException(status_code=503, detail="RAG pipeline is not ready")
 
         started = time.perf_counter()
+        decision = await run_in_threadpool(admission.acquire)
+        metrics.observe_admission(decision.wait_seconds, decision.admitted)
+        if not decision.admitted:
+            raise HTTPException(
+                status_code=503,
+                detail="RAG service is at capacity",
+                headers={
+                    "Retry-After": str(max(1, math.ceil(queue_timeout_seconds))),
+                },
+            )
+
         try:
             result = await run_in_threadpool(
                 pipeline.answer,
@@ -135,6 +167,9 @@ def create_app(
             raise HTTPException(
                 status_code=500, detail="RAG inference failed"
             ) from None
+        finally:
+            admission.release()
+            metrics.observe_request_finished()
 
         metrics.observe_success(
             result.timings_seconds,

@@ -148,6 +148,7 @@ flowchart TD
 - **Efficient inference path:** the embedding model, FAISS index, corpus, and BM25 state load once at process startup.
 - **Measured online serving:** FastAPI endpoints return selected chunk IDs plus embedding, dense retrieval, BM25, fusion, generation, and total latency.
 - **Operational visibility:** Prometheus counters, readiness state, request/failure/fallback rates, and per-stage latency histograms.
+- **Overload protection:** bounded inference concurrency rejects excess work with HTTP 503 and `Retry-After` instead of allowing unbounded queue growth.
 - **Measured optimization:** a bounded TTL response cache reports hit/miss/bypass metrics and avoids repeat retrieval, generation, token usage, and provider cost.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
@@ -239,6 +240,18 @@ uvicorn service.app:app --host 0.0.0.0 --port 8000
 
 Production startup loads the model and retrieval state once. If `data/faiss_index.bin` is absent, the service rebuilds it from the checked-in embeddings before reporting ready.
 
+Inference admission defaults to four concurrent requests and a 50 ms queue wait.
+Tune those limits for the deployed CPU, memory, and provider quota:
+
+```bash
+export RAG_MAX_CONCURRENT_REQUESTS=4
+export RAG_QUEUE_TIMEOUT_SECONDS=0.05
+```
+
+When all slots remain occupied beyond the queue timeout, `/answer` returns HTTP
+503 with `Retry-After: 1`. This bounds queued work while leaving liveness,
+readiness, and metrics responsive during overload.
+
 Check health and readiness:
 
 ```bash
@@ -299,6 +312,9 @@ The endpoint exposes:
 - `rag_provider_cost_usd_total`
 - `rag_request_latency_seconds`
 - `rag_stage_latency_seconds{stage=...}`
+- `rag_in_flight_requests`
+- `rag_admission_wait_seconds{outcome="admitted|rejected"}`
+- `rag_overload_rejections_total`
 - `rag_service_ready`
 
 Prometheus can calculate p50 and p95 latency from the request and stage histograms.
@@ -372,6 +388,8 @@ These tests require no model download, external service, or API key. CI also bui
 - Repeated successful queries are cached by normalized question and retrieval depth; every result reports `hit`, `miss`, or `bypass`, so disabled and intentionally skipped caches are not counted as misses.
 - Liveness remains available when model initialization fails, while readiness correctly returns HTTP 503.
 - API failures return a stable public error and keep backend details in server logs.
+- Inference admission caps concurrent work and exposes queue wait, in-flight load,
+  and overload rejection metrics for capacity planning.
 - Upstream generation failures retain a typed error signal, return HTTP 502, increment
   the `provider` failure metric, and appear as provider failures in benchmark reports.
 

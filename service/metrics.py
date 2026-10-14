@@ -54,6 +54,23 @@ class ServiceMetrics:
             "Retrieved chunks quarantined by deterministic context-safety rules.",
             registry=self.registry,
         )
+        self.overload_rejections = Counter(
+            "rag_overload_rejections_total",
+            "RAG requests rejected because inference capacity was exhausted.",
+            registry=self.registry,
+        )
+        self.in_flight_requests = Gauge(
+            "rag_in_flight_requests",
+            "RAG answer requests currently holding an inference-capacity slot.",
+            registry=self.registry,
+        )
+        self.admission_wait = Histogram(
+            "rag_admission_wait_seconds",
+            "Time spent waiting for an inference-capacity slot.",
+            ("outcome",),
+            buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5),
+            registry=self.registry,
+        )
         self.request_latency = Histogram(
             "rag_request_latency_seconds",
             "End-to-end latency for answer requests.",
@@ -90,6 +107,18 @@ class ServiceMetrics:
 
     def set_ready(self, is_ready: bool) -> None:
         self.ready.set(1 if is_ready else 0)
+
+    def observe_admission(self, wait_seconds: float, admitted: bool) -> None:
+        outcome = "admitted" if admitted else "rejected"
+        self.admission_wait.labels(outcome=outcome).observe(wait_seconds)
+        if admitted:
+            self.in_flight_requests.inc()
+        else:
+            self.requests.labels(status="overloaded").inc()
+            self.overload_rejections.inc()
+
+    def observe_request_finished(self) -> None:
+        self.in_flight_requests.dec()
 
     def observe_success(
         self,
