@@ -122,6 +122,9 @@ def summarize(samples: list[Sample], wall_seconds: float) -> dict[str, object]:
     failures = Counter(sample.failure for sample in samples if sample.failure)
     fallback_count = sum(bool(sample.payload.get("fallback")) for sample in successes)
     cache_hits = sum(bool(sample.payload.get("cache_hit")) for sample in successes)
+    coalesced = sum(
+        sample.payload.get("cache_status") == "coalesced" for sample in successes
+    )
 
     return {
         "requests": len(samples),
@@ -132,6 +135,7 @@ def summarize(samples: list[Sample], wall_seconds: float) -> dict[str, object]:
         if successes
         else None,
         "cache_hit_rate": round(cache_hits / len(successes), 4) if successes else None,
+        "coalesced_rate": round(coalesced / len(successes), 4) if successes else None,
         "latency_ms": {
             "p50": round(statistics.median(latencies_ms), 3) if latencies_ms else None,
             "p95": round(_percentile(latencies_ms, 0.95), 3) if latencies_ms else None,

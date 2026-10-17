@@ -149,7 +149,7 @@ flowchart TD
 - **Measured online serving:** FastAPI endpoints return selected chunk IDs plus embedding, dense retrieval, BM25, fusion, generation, and total latency.
 - **Operational visibility:** Prometheus counters, readiness state, request/failure/fallback rates, and per-stage latency histograms.
 - **Overload protection:** bounded inference concurrency rejects excess work with HTTP 503 and `Retry-After` instead of allowing unbounded queue growth.
-- **Measured optimization:** a bounded TTL response cache reports hit/miss/bypass metrics and avoids repeat retrieval, generation, token usage, and provider cost.
+- **Measured optimization:** a bounded TTL response cache and single-flight request coalescing report hit/miss/coalesced/bypass metrics while avoiding repeat retrieval, generation, token usage, and provider cost.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
 - **Retrieval quality gates:** comparable Hit Rate, Recall, MRR, and nDCG reports can fail CI when a measured retriever regresses.
@@ -318,6 +318,9 @@ The endpoint exposes:
 - `rag_service_ready`
 
 Prometheus can calculate p50 and p95 latency from the request and stage histograms.
+Concurrent identical cache misses are coalesced into one retrieval and provider call.
+Followers report `cache_status="coalesced"`, zero provider usage, and a
+`coalescing_wait` timing instead of duplicating paid inference.
 
 ## Run with Docker
 
