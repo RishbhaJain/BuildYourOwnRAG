@@ -44,7 +44,7 @@ class AnswerResponse(BaseModel):
     fallback: bool
     timings_ms: dict[str, float]
     cache_hit: bool
-    cache_status: Literal["hit", "miss", "bypass"]
+    cache_status: Literal["hit", "miss", "coalesced", "bypass"]
     provider_called: bool
     prompt_tokens: int | None
     completion_tokens: int | None

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from retriever.fusion import reciprocal_rank_fusion
-from service.cache import TTLCache
+from service.cache import SingleFlight, TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class SparseRetrieverLike(Protocol):
 
 Generator = Callable[[str, list[dict]], str]
 Clock = Callable[[], float]
-CacheStatus = Literal["hit", "miss", "bypass"]
+CacheStatus = Literal["hit", "miss", "coalesced", "bypass"]
 
 
 @dataclass(frozen=True)
@@ -69,12 +69,36 @@ class RAGPipeline:
         self.default_top_k = default_top_k
         self.clock = clock
         self.response_cache = response_cache
+        self._singleflight = SingleFlight[RAGResult]()
 
     def _measure(self, timings: dict[str, float], stage: str, operation):
         started = self.clock()
         value = operation()
         timings[stage] = self.clock() - started
         return value
+
+    def _reuse_result(
+        self,
+        result: RAGResult,
+        *,
+        timings: dict[str, float],
+        cache_status: CacheStatus,
+    ) -> RAGResult:
+        return RAGResult(
+            answer=result.answer,
+            retrieved_chunk_ids=result.retrieved_chunk_ids,
+            timings_seconds=timings,
+            fallback=result.fallback,
+            cache_hit=cache_status == "hit",
+            cache_status=cache_status,
+            provider_called=False,
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            estimated_cost_usd=0.0,
+            ttft_seconds=0.0,
+            safety_filtered_chunk_ids=result.safety_filtered_chunk_ids,
+        )
 
     def answer(
         self,
@@ -101,85 +125,98 @@ class RAGPipeline:
             timings["cache_lookup"] = self.clock() - cache_started
             if cached is not None:
                 timings["total"] = self.clock() - total_started
-                return RAGResult(
-                    answer=cached.answer,
-                    retrieved_chunk_ids=cached.retrieved_chunk_ids,
-                    timings_seconds=timings,
-                    fallback=cached.fallback,
-                    cache_hit=True,
+                return self._reuse_result(
+                    cached,
+                    timings=timings,
                     cache_status="hit",
-                    provider_called=False,
-                    prompt_tokens=0,
-                    completion_tokens=0,
-                    total_tokens=0,
-                    estimated_cost_usd=0.0,
-                    ttft_seconds=0.0,
-                    safety_filtered_chunk_ids=cached.safety_filtered_chunk_ids,
                 )
 
-        query_vectors = self._measure(
-            timings,
-            "embedding",
-            lambda: self.dense.encode_queries([question]),
-        )
-        dense_results = self._measure(
-            timings,
-            "dense_retrieval",
-            lambda: self.dense.search_encoded(query_vectors, k=selected_top_k)[0],
-        )
-        sparse_results = self._measure(
-            timings,
-            "bm25_retrieval",
-            lambda: self.sparse.retrieve_top_k(question, k=selected_top_k),
-        )
-        fused_results = self._measure(
-            timings,
-            "fusion",
-            lambda: reciprocal_rank_fusion(
-                dense_results,
-                sparse_results,
-                top_k=selected_top_k,
-            ),
-        )
-        generated = self._measure(
-            timings,
-            "generation",
-            lambda: self.generator(question, fused_results),
-        )
-        timings["total"] = self.clock() - total_started
+            claim = self._singleflight.claim(cache_key)
+            if not claim.leader:
+                coalescing_started = self.clock()
+                shared = claim.future.result()
+                timings["coalescing_wait"] = self.clock() - coalescing_started
+                timings["total"] = self.clock() - total_started
+                return self._reuse_result(
+                    shared,
+                    timings=timings,
+                    cache_status="coalesced",
+                )
 
-        if isinstance(generated, str):
-            answer = generated
-            metadata = {}
-        else:
-            answer = generated.answer
-            metadata = {
-                "prompt_tokens": generated.prompt_tokens,
-                "completion_tokens": generated.completion_tokens,
-                "total_tokens": generated.total_tokens,
-                "estimated_cost_usd": generated.cost_usd,
-                "ttft_seconds": generated.ttft_seconds,
-                "provider_called": generated.provider_called,
-                "safety_filtered_chunk_ids": generated.safety_filtered_chunk_ids,
-            }
-        normalized_answer = answer.strip()
-        result = RAGResult(
-            answer=normalized_answer or "Unknown",
-            retrieved_chunk_ids=[
-                str(chunk["chunk_id"])
-                for chunk in fused_results
-                if chunk.get("chunk_id") is not None
-            ],
-            timings_seconds=timings,
-            fallback=(not normalized_answer or normalized_answer.lower() == "unknown"),
-            cache_status=(
-                "miss" if use_cache and self.response_cache is not None else "bypass"
-            ),
-            **metadata,
-        )
-        if use_cache and self.response_cache is not None and not result.fallback:
-            self.response_cache.set(cache_key, result)
-        return result
+        try:
+            query_vectors = self._measure(
+                timings,
+                "embedding",
+                lambda: self.dense.encode_queries([question]),
+            )
+            dense_results = self._measure(
+                timings,
+                "dense_retrieval",
+                lambda: self.dense.search_encoded(query_vectors, k=selected_top_k)[0],
+            )
+            sparse_results = self._measure(
+                timings,
+                "bm25_retrieval",
+                lambda: self.sparse.retrieve_top_k(question, k=selected_top_k),
+            )
+            fused_results = self._measure(
+                timings,
+                "fusion",
+                lambda: reciprocal_rank_fusion(
+                    dense_results,
+                    sparse_results,
+                    top_k=selected_top_k,
+                ),
+            )
+            generated = self._measure(
+                timings,
+                "generation",
+                lambda: self.generator(question, fused_results),
+            )
+            timings["total"] = self.clock() - total_started
+
+            if isinstance(generated, str):
+                answer = generated
+                metadata = {}
+            else:
+                answer = generated.answer
+                metadata = {
+                    "prompt_tokens": generated.prompt_tokens,
+                    "completion_tokens": generated.completion_tokens,
+                    "total_tokens": generated.total_tokens,
+                    "estimated_cost_usd": generated.cost_usd,
+                    "ttft_seconds": generated.ttft_seconds,
+                    "provider_called": generated.provider_called,
+                    "safety_filtered_chunk_ids": generated.safety_filtered_chunk_ids,
+                }
+            normalized_answer = answer.strip()
+            result = RAGResult(
+                answer=normalized_answer or "Unknown",
+                retrieved_chunk_ids=[
+                    str(chunk["chunk_id"])
+                    for chunk in fused_results
+                    if chunk.get("chunk_id") is not None
+                ],
+                timings_seconds=timings,
+                fallback=(
+                    not normalized_answer or normalized_answer.lower() == "unknown"
+                ),
+                cache_status=(
+                    "miss"
+                    if use_cache and self.response_cache is not None
+                    else "bypass"
+                ),
+                **metadata,
+            )
+            if use_cache and self.response_cache is not None:
+                if not result.fallback:
+                    self.response_cache.set(cache_key, result)
+                self._singleflight.succeed(cache_key, result)
+            return result
+        except BaseException as exc:
+            if use_cache and self.response_cache is not None:
+                self._singleflight.fail(cache_key, exc)
+            raise
 
 
 def load_production_pipeline() -> RAGPipeline:

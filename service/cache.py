@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections import OrderedDict
 from collections.abc import Callable
+from concurrent.futures import Future
 from dataclasses import dataclass
 from threading import RLock
 from typing import Generic, TypeVar
@@ -63,3 +64,54 @@ class TTLCache(Generic[Value]):
     def clear(self) -> None:
         with self._lock:
             self._entries.clear()
+
+
+@dataclass(frozen=True)
+class FlightClaim(Generic[Value]):
+    """One caller's role in a shared computation for a cache key."""
+
+    future: Future[Value]
+    leader: bool
+
+
+class SingleFlight(Generic[Value]):
+    """Coalesce concurrent work for the same key into one computation."""
+
+    def __init__(self) -> None:
+        self._flights: dict[str, Future[Value]] = {}
+        self._lock = RLock()
+
+    def claim(self, key: str) -> FlightClaim[Value]:
+        with self._lock:
+            future = self._flights.get(key)
+            if future is not None:
+                return FlightClaim(future=future, leader=False)
+            future = Future()
+            self._flights[key] = future
+            return FlightClaim(future=future, leader=True)
+
+    def succeed(self, key: str, value: Value) -> None:
+        self._finish(key, value=value)
+
+    def fail(self, key: str, error: BaseException) -> None:
+        self._finish(key, error=error)
+
+    def _finish(
+        self,
+        key: str,
+        *,
+        value: Value | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        with self._lock:
+            try:
+                future = self._flights[key]
+            except KeyError as exc:
+                raise RuntimeError(
+                    f"No in-flight computation exists for key {key!r}"
+                ) from exc
+            if error is None:
+                future.set_result(value)
+            else:
+                future.set_exception(error)
+            del self._flights[key]
