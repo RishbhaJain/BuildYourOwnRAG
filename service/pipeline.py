@@ -118,7 +118,10 @@ class RAGPipeline:
         total_started = self.clock()
         timings: dict[str, float] = {}
 
-        cache_key = f"{selected_top_k}\0{question.casefold()}"
+        # Preserve case: it can change meaning (for example, "US" versus "us").
+        # The question has already been stripped, so surrounding whitespace is
+        # still normalized without conflating distinct prompts.
+        cache_key = f"{selected_top_k}\0{question}"
         if use_cache and self.response_cache is not None:
             cache_started = self.clock()
             cached = self.response_cache.get(cache_key)
