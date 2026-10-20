@@ -151,6 +151,32 @@ def test_pipeline_cache_skips_retrieval_and_generation_on_repeat_query():
     assert calls["generation"] == 2
 
 
+def test_pipeline_cache_keeps_case_sensitive_questions_distinct():
+    seen_questions = []
+
+    def generator(question, passages):
+        seen_questions.append(question)
+        return f"Answer for {question}"
+
+    pipeline = RAGPipeline(
+        dense=FakeDenseRetriever(),
+        sparse=FakeSparseRetriever(),
+        generator=generator,
+        response_cache=TTLCache(max_entries=4, ttl_seconds=60),
+    )
+
+    upper = pipeline.answer("Explain US")
+    lower = pipeline.answer("Explain us")
+    upper_again = pipeline.answer("  Explain US  ")
+
+    assert upper.answer == "Answer for Explain US"
+    assert lower.answer == "Answer for Explain us"
+    assert upper.cache_status == lower.cache_status == "miss"
+    assert upper_again.cache_status == "hit"
+    assert upper_again.answer == upper.answer
+    assert seen_questions == ["Explain US", "Explain us"]
+
+
 def test_concurrent_cache_misses_share_one_pipeline_execution():
     entered = Event()
     release = Event()
@@ -177,7 +203,7 @@ def test_concurrent_cache_misses_share_one_pipeline_execution():
     with ThreadPoolExecutor(max_workers=2) as executor:
         leader = executor.submit(pipeline.answer, "Same question")
         assert entered.wait(timeout=1)
-        follower = executor.submit(pipeline.answer, "same QUESTION")
+        follower = executor.submit(pipeline.answer, "Same question")
         assert follower_joined.wait(timeout=1)
         release.set()
         results = [leader.result(timeout=1), follower.result(timeout=1)]

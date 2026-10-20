@@ -388,7 +388,7 @@ These tests require no model download, external service, or API key. CI also bui
 - Dense vectors are L2-normalized, so inner product in FAISS corresponds to cosine similarity.
 - Reciprocal Rank Fusion combines dense and lexical rankings without requiring score calibration.
 - The service separates query embedding from FAISS search so both stages can be measured independently.
-- Repeated successful queries are cached by normalized question and retrieval depth; every result reports `hit`, `miss`, or `bypass`, so disabled and intentionally skipped caches are not counted as misses.
+- Repeated successful queries are cached by whitespace-trimmed, case-sensitive question and retrieval depth; every result reports `hit`, `miss`, or `bypass`, so disabled and intentionally skipped caches are not counted as misses.
 - Liveness remains available when model initialization fails, while readiness correctly returns HTTP 503.
 - API failures return a stable public error and keep backend details in server logs.
 - Inference admission caps concurrent work and exposes queue wait, in-flight load,
