@@ -40,6 +40,7 @@ jobs:
             llms/context_safety.py \
             llms/llm_pipeline.py \
             tests/test_cache.py \
+            tests/test_bm25.py \
             tests/test_live_benchmark.py \
             tests/test_grounding_evaluation.py \
             tests/test_retrieval_artifacts.py \
@@ -49,6 +50,7 @@ jobs:
             tests/test_service_api.py \
             tests/test_service_pipeline.py \
             retriever/artifacts.py \
+            retriever/bm25_retriever.py \
             retriever/dense_retriever.py \
             run_embedder.py
           python -m ruff check \
@@ -61,6 +63,7 @@ jobs:
             llms/context_safety.py \
             llms/llm_pipeline.py \
             tests/test_cache.py \
+            tests/test_bm25.py \
             tests/test_live_benchmark.py \
             tests/test_grounding_evaluation.py \
             tests/test_retrieval_artifacts.py \
@@ -69,6 +72,7 @@ jobs:
             tests/test_service_api.py \
             tests/test_service_pipeline.py \
             retriever/artifacts.py \
+            retriever/bm25_retriever.py \
             retriever/dense_retriever.py \
             run_embedder.py
 
@@ -81,6 +85,7 @@ jobs:
             tests/test_retrieval_evaluation.py \
             tests/test_analyze_errors.py \
             tests/test_cache.py \
+            tests/test_bm25.py \
             tests/test_context_safety.py \
             tests/test_llm.py \
             tests/test_live_benchmark.py \

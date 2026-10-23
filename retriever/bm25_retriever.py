@@ -1,4 +1,5 @@
 import json
+
 import numpy as np
 from rank_bm25 import BM25Okapi
 
@@ -26,5 +27,6 @@ class BM25Retriever:
 
         tokens = query.lower().split()
         scores = self.bm25.get_scores(tokens)
-        top_k_idx = np.argsort(scores)[::-1][:k]
+        ranked_idx = np.argsort(scores)[::-1]
+        top_k_idx = [index for index in ranked_idx if scores[index] != 0.0][:k]
         return [dict(self.chunks[i], bm25_score=float(scores[i])) for i in top_k_idx]
