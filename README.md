@@ -142,7 +142,7 @@ flowchart TD
 
 ## Engineering highlights
 
-- **Responsible crawling:** domain allowlists, `robots.txt` checks, per-domain rate limiting, retries, redirect handling, and persistent storage.
+- **Responsible crawling:** domain allowlists, `robots.txt` checks, per-domain rate limiting, retries, and persistent storage. Every redirect hop is re-authorized before the request, so redirects cannot escape the crawl boundary or bypass destination robots policy.
 - **Resilient extraction:** structural extraction with Resiliparse plus a BeautifulSoup fallback for malformed or heterogeneous pages.
 - **Hybrid retrieval:** normalized dense embeddings in a FAISS inner-product index combined with BM25 through Reciprocal Rank Fusion.
 - **Efficient inference path:** the embedding model, FAISS index, corpus, and BM25 state load once at process startup.
