@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
+INDEX_MANIFEST_SCHEMA_VERSION = 1
 _NPY_MAGIC = b"\x93NUMPY"
 _DTYPE_PATTERN = re.compile(r"^[<>=|]?[biufc](\d+)$")
 
@@ -228,3 +229,102 @@ def validate_manifest(
                     f"{artifact}.{field} does not match the retrieval manifest"
                 )
     return actual
+
+
+def build_index_manifest(
+    index_path: Path,
+    retrieval_manifest_path: Path,
+    *,
+    rows: int,
+    dimensions: int,
+) -> dict[str, Any]:
+    """Bind a derived FAISS index to the exact retrieval artifacts it indexes."""
+    if rows < 1 or dimensions < 1:
+        raise ArtifactIntegrityError("FAISS index shape must be positive")
+    return {
+        "schema_version": INDEX_MANIFEST_SCHEMA_VERSION,
+        "retrieval_manifest_sha256": sha256_file(retrieval_manifest_path),
+        "index": {
+            "path": str(index_path),
+            "sha256": sha256_file(index_path),
+            "rows": rows,
+            "dimensions": dimensions,
+        },
+    }
+
+
+def write_index_manifest(
+    index_manifest_path: Path,
+    index_path: Path,
+    retrieval_manifest_path: Path,
+    *,
+    rows: int,
+    dimensions: int,
+) -> dict[str, Any]:
+    manifest = build_index_manifest(
+        index_path,
+        retrieval_manifest_path,
+        rows=rows,
+        dimensions=dimensions,
+    )
+    index_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    index_manifest_path.write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
+def validate_index_manifest(
+    index_manifest_path: Path,
+    index_path: Path,
+    retrieval_manifest_path: Path,
+    *,
+    expected_rows: int,
+    expected_dimensions: int,
+) -> dict[str, Any]:
+    """Fail closed if an index is stale, modified, or built for different artifacts."""
+    try:
+        expected = json.loads(index_manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ArtifactIntegrityError(
+            f"Missing FAISS index manifest: {index_manifest_path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ArtifactIntegrityError(
+            f"Invalid FAISS index manifest JSON: {index_manifest_path}"
+        ) from exc
+    if (
+        not isinstance(expected, dict)
+        or expected.get("schema_version") != INDEX_MANIFEST_SCHEMA_VERSION
+    ):
+        raise ArtifactIntegrityError(
+            "FAISS index manifest schema_version must be "
+            f"{INDEX_MANIFEST_SCHEMA_VERSION}: {index_manifest_path}"
+        )
+
+    actual_retrieval_sha256 = sha256_file(retrieval_manifest_path)
+    if expected.get("retrieval_manifest_sha256") != actual_retrieval_sha256:
+        raise ArtifactIntegrityError(
+            "FAISS index was built from a different retrieval manifest"
+        )
+    index_metadata = expected.get("index")
+    if not isinstance(index_metadata, dict):
+        raise ArtifactIntegrityError("FAISS index manifest is missing index metadata")
+    if index_metadata.get("rows") != expected_rows:
+        raise ArtifactIntegrityError("FAISS index row count does not match embeddings")
+    if index_metadata.get("dimensions") != expected_dimensions:
+        raise ArtifactIntegrityError("FAISS index dimensions do not match embeddings")
+    actual_index_sha256 = sha256_file(index_path)
+    if index_metadata.get("sha256") != actual_index_sha256:
+        raise ArtifactIntegrityError("FAISS index checksum does not match its manifest")
+
+    return {
+        "schema_version": INDEX_MANIFEST_SCHEMA_VERSION,
+        "retrieval_manifest_sha256": actual_retrieval_sha256,
+        "index": {
+            "path": str(index_path),
+            "sha256": actual_index_sha256,
+            "rows": expected_rows,
+            "dimensions": expected_dimensions,
+        },
+    }

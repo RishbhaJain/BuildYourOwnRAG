@@ -27,6 +27,7 @@ data/raw_pages_www/
 data/raw_pages.frontier
 data/corpus.jsonl
 data/faiss_index.bin
+data/faiss_index.manifest.json
 
 # Error reports
 errors_report.csv

@@ -34,6 +34,11 @@ def main():
         "--index", default=config.FAISS_INDEX_PATH, help="Output path for FAISS index"
     )
     parser.add_argument(
+        "--index-manifest",
+        default=config.FAISS_INDEX_MANIFEST_PATH,
+        help="Output path for the FAISS index integrity manifest",
+    )
+    parser.add_argument(
         "--manifest",
         default=config.RETRIEVAL_MANIFEST_PATH,
         help="Output path for retrieval artifact manifest",
@@ -44,6 +49,7 @@ def main():
         chunks_path=args.chunks,
         embeddings_path=args.embeddings,
         index_path=args.index,
+        index_manifest_path=args.index_manifest,
         manifest_path=args.manifest,
     )
 

@@ -145,6 +145,7 @@ flowchart TD
 - **Responsible crawling:** domain allowlists, `robots.txt` checks, per-domain rate limiting, retries, and persistent storage. Every redirect hop is re-authorized before the request, so redirects cannot escape the crawl boundary or bypass destination robots policy.
 - **Resilient extraction:** structural extraction with Resiliparse plus a BeautifulSoup fallback for malformed or heterogeneous pages.
 - **Hybrid retrieval:** normalized dense embeddings in a FAISS inner-product index combined with BM25 through Reciprocal Rank Fusion.
+- **Content-addressed retrieval artifacts:** chunks, embeddings, and the derived FAISS index are checksum-bound, so a stale or modified same-shape index fails before serving.
 - **Efficient inference path:** the embedding model, FAISS index, corpus, and BM25 state load once at process startup.
 - **Measured online serving:** FastAPI endpoints return selected chunk IDs plus embedding, dense retrieval, BM25, fusion, generation, and total latency.
 - **Operational visibility:** Prometheus counters, readiness state, request/failure/fallback rates, and per-stage latency histograms.

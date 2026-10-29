@@ -17,7 +17,9 @@ import config
 from embedder.embedder import Embedder
 from retriever.artifacts import (
     ArtifactIntegrityError,
+    validate_index_manifest,
     validate_manifest,
+    write_index_manifest,
     write_manifest,
 )
 
@@ -30,11 +32,13 @@ class DenseRetriever:
         chunks_path: str = config.CHUNKS_JSONL_PATH,
         embeddings_path: str = config.EMBEDDINGS_PATH,
         index_path: str = config.FAISS_INDEX_PATH,
+        index_manifest_path: str = config.FAISS_INDEX_MANIFEST_PATH,
         manifest_path: str = config.RETRIEVAL_MANIFEST_PATH,
     ):
         self.chunks_path = chunks_path
         self.embeddings_path = embeddings_path
         self.index_path = index_path
+        self.index_manifest_path = index_manifest_path
         self.manifest_path = manifest_path
         self.chunks = []
         self.index = None
@@ -93,6 +97,13 @@ class DenseRetriever:
 
         os.makedirs(os.path.dirname(self.index_path) or ".", exist_ok=True)
         faiss.write_index(self.index, self.index_path)
+        write_index_manifest(
+            Path(self.index_manifest_path),
+            Path(self.index_path),
+            Path(self.manifest_path),
+            rows=self.index.ntotal,
+            dimensions=self.index.d,
+        )
         logger.info(
             "Built and saved FAISS index (%d vectors, dim=%d) to %s",
             self.index.ntotal,
@@ -111,9 +122,16 @@ class DenseRetriever:
         )
         if not self.chunks:
             self.load_chunks()
-        self.index = faiss.read_index(self.index_path)
         expected_rows = manifest["embeddings"]["rows"]
         expected_dimensions = manifest["embeddings"]["dimensions"]
+        validate_index_manifest(
+            Path(self.index_manifest_path),
+            Path(self.index_path),
+            Path(self.manifest_path),
+            expected_rows=expected_rows,
+            expected_dimensions=expected_dimensions,
+        )
+        self.index = faiss.read_index(self.index_path)
         if self.index.ntotal != expected_rows or self.index.d != expected_dimensions:
             raise ArtifactIntegrityError(
                 "FAISS index shape does not match the retrieval artifact manifest: "

@@ -7,7 +7,9 @@ import pytest
 from retriever.artifacts import (
     ArtifactIntegrityError,
     build_manifest,
+    validate_index_manifest,
     validate_manifest,
+    write_index_manifest,
     write_manifest,
 )
 
@@ -150,4 +152,100 @@ def test_embedding_validation_rejects_truncated_array(tmp_path: Path):
             embeddings,
             embedding_model="model/revision",
             query_prefix="",
+        )
+
+
+def test_index_manifest_binds_index_bytes_to_retrieval_manifest(tmp_path: Path):
+    chunks, embeddings, retrieval_manifest = artifact_paths(tmp_path)
+    write_manifest(
+        retrieval_manifest,
+        chunks,
+        embeddings,
+        embedding_model="model/revision",
+        query_prefix="",
+    )
+    index_path = tmp_path / "index.faiss"
+    index_path.write_bytes(b"deterministic-index-bytes")
+    index_manifest = tmp_path / "index.manifest.json"
+
+    written = write_index_manifest(
+        index_manifest,
+        index_path,
+        retrieval_manifest,
+        rows=2,
+        dimensions=3,
+    )
+    validated = validate_index_manifest(
+        index_manifest,
+        index_path,
+        retrieval_manifest,
+        expected_rows=2,
+        expected_dimensions=3,
+    )
+
+    assert validated["index"]["sha256"] == written["index"]["sha256"]
+    assert (
+        validated["retrieval_manifest_sha256"] == written["retrieval_manifest_sha256"]
+    )
+
+
+def test_index_manifest_rejects_same_shape_tampered_index(tmp_path: Path):
+    chunks, embeddings, retrieval_manifest = artifact_paths(tmp_path)
+    write_manifest(
+        retrieval_manifest,
+        chunks,
+        embeddings,
+        embedding_model="model/revision",
+        query_prefix="",
+    )
+    index_path = tmp_path / "index.faiss"
+    index_path.write_bytes(b"original-index")
+    index_manifest = tmp_path / "index.manifest.json"
+    write_index_manifest(
+        index_manifest,
+        index_path,
+        retrieval_manifest,
+        rows=2,
+        dimensions=3,
+    )
+    index_path.write_bytes(b"tampered-index")
+
+    with pytest.raises(ArtifactIntegrityError, match="checksum"):
+        validate_index_manifest(
+            index_manifest,
+            index_path,
+            retrieval_manifest,
+            expected_rows=2,
+            expected_dimensions=3,
+        )
+
+
+def test_index_manifest_rejects_retrieval_manifest_drift(tmp_path: Path):
+    chunks, embeddings, retrieval_manifest = artifact_paths(tmp_path)
+    write_manifest(
+        retrieval_manifest,
+        chunks,
+        embeddings,
+        embedding_model="model/revision",
+        query_prefix="",
+    )
+    index_path = tmp_path / "index.faiss"
+    index_path.write_bytes(b"index")
+    index_manifest = tmp_path / "index.manifest.json"
+    write_index_manifest(
+        index_manifest,
+        index_path,
+        retrieval_manifest,
+        rows=2,
+        dimensions=3,
+    )
+    retrieval_manifest.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ArtifactIntegrityError, match="different retrieval manifest"):
+        validate_index_manifest(
+            index_manifest,
+            index_path,
+            retrieval_manifest,
+            expected_rows=2,
+            expected_dimensions=3,
         )
