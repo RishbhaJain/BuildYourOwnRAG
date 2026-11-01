@@ -8,9 +8,9 @@ A production-style retrieval-augmented generation system for factual question an
 
 ### Answer quality
 
-| Benchmark snapshot | Questions | Exact Match | Token F1 |
+| Benchmark snapshot | Questions | Exact Match (95% CI) | Token F1 (95% CI) |
 |---|---:|---:|---:|
-| Checked-in `predictions.txt` | 100 | **55.00%** | **65.86%** |
+| Checked-in `predictions.txt` | 100 | **55.00%** (45.00-64.00%) | **65.86%** (57.30-74.06%) |
 
 Reproduce the quality metrics with:
 
@@ -18,7 +18,9 @@ Reproduce the quality metrics with:
 python run_evaluation.py predictions.txt
 ```
 
-The evaluator applies SQuAD-style normalization, reports normalized exact match and token-level F1, and supports multiple reference answers.
+The evaluator applies SQuAD-style normalization, supports multiple reference
+answers, and reports deterministic paired bootstrap confidence intervals using
+2,000 question-level resamples with seed 3407.
 
 ### Retrieval quality
 

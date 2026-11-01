@@ -33,6 +33,7 @@ jobs:
             service \
             benchmarks \
             analyze_errors.py \
+            run_evaluation.py \
             grounding_evaluation.py \
             validate_retrieval_artifacts.py \
             retrieval_evaluation.py \
@@ -43,6 +44,7 @@ jobs:
             tests/test_cache.py \
             tests/test_bm25.py \
             tests/test_live_benchmark.py \
+            tests/test_evaluation.py \
             tests/test_grounding_evaluation.py \
             tests/test_retrieval_artifacts.py \
             tests/test_retrieval_evaluation.py \
@@ -59,6 +61,7 @@ jobs:
             service \
             benchmarks \
             analyze_errors.py \
+            run_evaluation.py \
             grounding_evaluation.py \
             validate_retrieval_artifacts.py \
             crawler/fetcher.py \
@@ -68,6 +71,7 @@ jobs:
             tests/test_cache.py \
             tests/test_bm25.py \
             tests/test_live_benchmark.py \
+            tests/test_evaluation.py \
             tests/test_grounding_evaluation.py \
             tests/test_retrieval_artifacts.py \
             tests/test_fetcher.py \
