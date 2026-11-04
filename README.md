@@ -106,8 +106,10 @@ python -m benchmarks.benchmark_service --iterations 1000 --warmup 50
 
 The live benchmark drives the production API over the existing question set at
 concurrency 1, 4, and 8. It records end-to-end p50/p95 latency, true streamed
-time to first token, throughput, completion tokens per second, fallback and
-failure categories, provider-reported cost per question, and cache hit rate.
+time to first token, offered request rate, successful request throughput, system
+output-token throughput, provider decode throughput, fallback and failure categories,
+provider-reported cost per question, and cache hit rate. Failed requests never count
+as successful throughput, so overload cannot make an unhealthy run look faster.
 
 ```bash
 export OPENROUTER_API_KEY="your-key"
