@@ -50,7 +50,10 @@ def test_summary_reports_latency_usage_cost_cache_and_failures():
     assert result["cache_hit_rate"] == 0.5
     assert result["coalesced_rate"] == 0.0
     assert result["ttft_ms"] == {"p50": 40.0, "p95": 40.0}
-    assert result["completion_tokens_per_second"] == 125.0
+    assert result["offered_requests_per_second"] == 2.0
+    assert result["successful_requests_per_second"] == 1.333
+    assert result["completion_tokens_per_wall_second"] == 6.667
+    assert result["provider_completion_tokens_per_second"] == 125.0
     assert result["provider_cost_usd_total"] == 0.002
     assert result["provider_cost_usd_per_question"] == 0.001
 
@@ -79,6 +82,20 @@ def test_summary_reports_coalesced_request_rate():
     assert result["cache_hit_rate"] == 0.0
     assert result["coalesced_rate"] == 1.0
     assert result["provider_cost_usd_total"] == 0.0
+
+
+def test_failed_requests_do_not_inflate_successful_throughput():
+    samples = [
+        Sample(elapsed_seconds=0.01, payload=None, failure="http_503"),
+        Sample(elapsed_seconds=0.01, payload=None, failure="http_503"),
+    ]
+
+    result = summarize(samples, wall_seconds=0.02)
+
+    assert result["offered_requests_per_second"] == 100.0
+    assert result["successful_requests_per_second"] == 0.0
+    assert result["completion_tokens_per_wall_second"] is None
+    assert result["provider_completion_tokens_per_second"] is None
 
 
 def test_empty_workload_fails_before_contacting_service(monkeypatch):

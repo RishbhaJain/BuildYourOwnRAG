@@ -144,8 +144,14 @@ def summarize(samples: list[Sample], wall_seconds: float) -> dict[str, object]:
             "p50": round(statistics.median(ttft_ms), 3) if ttft_ms else None,
             "p95": round(_percentile(ttft_ms, 0.95), 3) if ttft_ms else None,
         },
-        "throughput_requests_per_second": round(len(samples) / wall_seconds, 3),
-        "completion_tokens_per_second": (
+        "offered_requests_per_second": round(len(samples) / wall_seconds, 3),
+        "successful_requests_per_second": round(len(successes) / wall_seconds, 3),
+        "completion_tokens_per_wall_second": (
+            round(completion_tokens / wall_seconds, 3)
+            if completion_tokens > 0
+            else None
+        ),
+        "provider_completion_tokens_per_second": (
             round(completion_tokens / generation_seconds, 3)
             if generation_seconds > 0
             else None
@@ -224,7 +230,7 @@ def benchmark(
         )
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "endpoint": base_url,
         "question_count": len(questions),
         "concurrency_levels": concurrency_levels,
