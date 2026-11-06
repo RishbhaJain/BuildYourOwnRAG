@@ -144,6 +144,19 @@ flowchart TD
     G --> J["Exact Match and token F1"]
 ```
 
+## What I built
+
+- The Berkeley EECS data pipeline, including responsible crawling, resilient HTML
+  extraction, overlapping chunking, and content-addressed retrieval artifacts
+- Hybrid FAISS and BM25 retrieval with Reciprocal Rank Fusion, artifact lineage,
+  and comparable retrieval-quality evaluation
+- The FastAPI serving layer with startup-loaded ML state, overload protection,
+  response caching, request coalescing, and Prometheus observability
+- Reproducible answer-quality, grounding, latency, throughput, cost, and
+  stage-level failure-analysis harnesses with CI regression gates
+- Safety hardening for untrusted retrieved content, outbound crawl boundaries,
+  provider failures, and stale or tampered model-serving artifacts
+
 ## Engineering highlights
 
 - **Responsible crawling:** domain allowlists, `robots.txt` checks, per-domain rate limiting, retries, and persistent storage. Every redirect hop is re-authorized before the request, so redirects cannot escape the crawl boundary or bypass destination robots policy.
