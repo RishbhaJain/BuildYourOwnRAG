@@ -110,6 +110,7 @@ def test_pipeline_propagates_context_safety_metadata_and_provider_short_circuit(
             answer="Unknown",
             provider_called=False,
             safety_filtered_chunk_ids=("shared", "dense-1"),
+            context_budget_dropped_chunk_ids=("sparse-1",),
         ),
     )
 
@@ -118,6 +119,7 @@ def test_pipeline_propagates_context_safety_metadata_and_provider_short_circuit(
     assert result.fallback is True
     assert result.provider_called is False
     assert result.safety_filtered_chunk_ids == ("shared", "dense-1")
+    assert result.context_budget_dropped_chunk_ids == ("sparse-1",)
 
 
 def test_pipeline_cache_skips_retrieval_and_generation_on_repeat_query():

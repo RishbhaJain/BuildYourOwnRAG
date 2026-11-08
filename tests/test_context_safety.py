@@ -1,6 +1,6 @@
 import pytest
 
-from llms.context_safety import filter_untrusted_passages
+from llms.context_safety import enforce_context_budget, filter_untrusted_passages
 
 
 @pytest.mark.parametrize(
@@ -38,3 +38,21 @@ def test_keeps_benign_instructional_content():
 def test_rejects_non_text_retrieval_payloads():
     with pytest.raises(TypeError, match="must be strings"):
         filter_untrusted_passages([{"chunk_id": "bad", "text": ["not", "text"]}])
+
+
+def test_context_budget_preserves_ranked_whole_passages_and_reports_drops():
+    passages = [
+        {"chunk_id": "first", "title": "A", "text": "1234"},
+        {"chunk_id": "second", "title": "B", "text": "5678"},
+        {"chunk_id": "third", "text": "90"},
+    ]
+
+    result = enforce_context_budget(filter_untrusted_passages(passages), 7)
+
+    assert result.passages == (passages[0], passages[2])
+    assert result.budget_dropped_chunk_ids == ("second",)
+
+
+def test_context_budget_rejects_non_positive_limit():
+    with pytest.raises(ValueError, match="must be at least 1"):
+        enforce_context_budget(filter_untrusted_passages([]), 0)

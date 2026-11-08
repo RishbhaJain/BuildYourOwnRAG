@@ -50,6 +50,8 @@ BM25_TOP_K = 5
 # Generator
 LLM_MODEL = "meta-llama/llama-3.1-8b-instruct"
 MAX_NEW_TOKENS = 32
+# Bound retrieved text sent to the provider, even when callers request a large top_k.
+MAX_CONTEXT_CHARS = 16_000
 
 RAW_PAGES_DIR = "data/raw_pages"
 CORPUS_JSONL_PATH = "data/corpus.jsonl"

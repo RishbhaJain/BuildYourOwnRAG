@@ -48,6 +48,7 @@ class RAGResult:
     estimated_cost_usd: float | None = None
     ttft_seconds: float | None = None
     safety_filtered_chunk_ids: tuple[str, ...] = ()
+    context_budget_dropped_chunk_ids: tuple[str, ...] = ()
 
 
 class RAGPipeline:
@@ -98,6 +99,7 @@ class RAGPipeline:
             estimated_cost_usd=0.0,
             ttft_seconds=0.0,
             safety_filtered_chunk_ids=result.safety_filtered_chunk_ids,
+            context_budget_dropped_chunk_ids=result.context_budget_dropped_chunk_ids,
         )
 
     def answer(
@@ -191,6 +193,9 @@ class RAGPipeline:
                     "ttft_seconds": generated.ttft_seconds,
                     "provider_called": generated.provider_called,
                     "safety_filtered_chunk_ids": generated.safety_filtered_chunk_ids,
+                    "context_budget_dropped_chunk_ids": (
+                        generated.context_budget_dropped_chunk_ids
+                    ),
                 }
             normalized_answer = answer.strip()
             result = RAGResult(

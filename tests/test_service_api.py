@@ -140,14 +140,17 @@ def test_context_safety_quarantine_is_exposed_without_content():
                 timings_seconds={"generation": 0.01, "total": 0.02},
                 fallback=False,
                 safety_filtered_chunk_ids=("hostile",),
+                context_budget_dropped_chunk_ids=("overflow",),
             )
 
     with TestClient(create_app(lambda: SafetyPipeline())) as client:
         response = client.post("/answer", json={"question": "test"})
         assert response.status_code == 200
         assert response.json()["safety_filtered_chunk_ids"] == ["hostile"]
+        assert response.json()["context_budget_dropped_chunk_ids"] == ["overflow"]
         metrics = client.get("/metrics").text
         assert "rag_context_safety_filtered_chunks_total 1.0" in metrics
+        assert "rag_context_budget_dropped_chunks_total 1.0" in metrics
 
 
 def test_overload_is_rejected_without_starting_extra_inference():

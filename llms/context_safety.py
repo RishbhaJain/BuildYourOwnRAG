@@ -38,6 +38,7 @@ class ContextSafetyResult:
 
     passages: tuple[dict, ...]
     findings: tuple[ContextSafetyFinding, ...]
+    budget_dropped_chunk_ids: tuple[str, ...] = ()
 
     @property
     def filtered_chunk_ids(self) -> tuple[str, ...]:
@@ -74,3 +75,30 @@ def filter_untrusted_passages(passages: list[dict]) -> ContextSafetyResult:
         else:
             kept.append(passage)
     return ContextSafetyResult(passages=tuple(kept), findings=tuple(findings))
+
+
+def enforce_context_budget(
+    result: ContextSafetyResult,
+    max_context_chars: int,
+) -> ContextSafetyResult:
+    """Keep the highest-ranked whole passages within a deterministic text budget."""
+    if max_context_chars < 1:
+        raise ValueError("max_context_chars must be at least 1")
+
+    kept = []
+    dropped = []
+    consumed = 0
+    for index, passage in enumerate(result.passages, 1):
+        chunk_id = str(passage.get("chunk_id", f"passage-{index}"))
+        passage_chars = len(passage.get("title", "")) + len(passage["text"])
+        if consumed + passage_chars <= max_context_chars:
+            kept.append(passage)
+            consumed += passage_chars
+        else:
+            dropped.append(chunk_id)
+
+    return ContextSafetyResult(
+        passages=tuple(kept),
+        findings=result.findings,
+        budget_dropped_chunk_ids=tuple(dropped),
+    )

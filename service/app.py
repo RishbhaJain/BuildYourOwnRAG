@@ -52,6 +52,7 @@ class AnswerResponse(BaseModel):
     estimated_cost_usd: float | None
     ttft_ms: float | None
     safety_filtered_chunk_ids: tuple[str, ...]
+    context_budget_dropped_chunk_ids: tuple[str, ...]
 
 
 def create_app(
@@ -181,6 +182,7 @@ def create_app(
             total_tokens=result.total_tokens,
             estimated_cost_usd=result.estimated_cost_usd,
             safety_filtered_chunks=len(result.safety_filtered_chunk_ids),
+            context_budget_dropped_chunks=len(result.context_budget_dropped_chunk_ids),
         )
         return AnswerResponse(
             answer=result.answer,
@@ -198,6 +200,7 @@ def create_app(
             total_tokens=result.total_tokens,
             estimated_cost_usd=result.estimated_cost_usd,
             safety_filtered_chunk_ids=result.safety_filtered_chunk_ids,
+            context_budget_dropped_chunk_ids=result.context_budget_dropped_chunk_ids,
             ttft_ms=(
                 round(result.ttft_seconds * 1_000, 3)
                 if result.ttft_seconds is not None

@@ -54,6 +54,11 @@ class ServiceMetrics:
             "Retrieved chunks quarantined by deterministic context-safety rules.",
             registry=self.registry,
         )
+        self.context_budget_dropped = Counter(
+            "rag_context_budget_dropped_chunks_total",
+            "Retrieved chunks omitted to keep provider context within budget.",
+            registry=self.registry,
+        )
         self.overload_rejections = Counter(
             "rag_overload_rejections_total",
             "RAG requests rejected because inference capacity was exhausted.",
@@ -131,6 +136,7 @@ class ServiceMetrics:
         total_tokens: int | None,
         estimated_cost_usd: float | None,
         safety_filtered_chunks: int = 0,
+        context_budget_dropped_chunks: int = 0,
     ) -> None:
         self.requests.labels(status="success").inc()
         self.request_latency.observe(request_elapsed_seconds)
@@ -150,6 +156,8 @@ class ServiceMetrics:
             self.provider_cost.inc(estimated_cost_usd)
         if safety_filtered_chunks:
             self.context_safety_filtered.inc(safety_filtered_chunks)
+        if context_budget_dropped_chunks:
+            self.context_budget_dropped.inc(context_budget_dropped_chunks)
 
     def observe_failure(self, elapsed_seconds: float, category: str) -> None:
         self.requests.labels(status="error").inc()
