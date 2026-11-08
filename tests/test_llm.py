@@ -73,6 +73,23 @@ def test_build_query_quarantines_injection_and_escapes_boundaries():
     assert "<user_question>Is 2 &lt; 3?</user_question>" in query
 
 
+def test_build_query_enforces_context_budget_before_provider_call():
+    query, safety = build_safe_query(
+        "What fits?",
+        [
+            {"chunk_id": "first", "text": "1234"},
+            {"chunk_id": "too-large", "text": "56789"},
+            {"chunk_id": "third", "text": "ab"},
+        ],
+        max_context_chars=6,
+    )
+
+    assert "1234" in query
+    assert "56789" not in query
+    assert "ab" in query
+    assert safety.budget_dropped_chunk_ids == ("too-large",)
+
+
 @patch("llms.llm_pipeline.call_llm")
 def test_generate_answer_does_not_call_provider_when_all_context_is_quarantined(
     mock_llm,
@@ -202,6 +219,22 @@ def test_metrics_generation_short_circuits_when_every_chunk_is_quarantined(mock_
         answer="Unknown",
         provider_called=False,
         safety_filtered_chunk_ids=("bad",),
+    )
+    mock_llm.assert_not_called()
+
+
+@patch("llms.llm_pipeline.call_llm_with_metrics")
+def test_metrics_generation_short_circuits_when_context_exceeds_budget(mock_llm):
+    result = generate_answer_with_metrics(
+        "What is relevant?",
+        [{"chunk_id": "oversized", "text": "too large"}],
+        max_context_chars=3,
+    )
+
+    assert result == GenerationResult(
+        answer="Unknown",
+        provider_called=False,
+        context_budget_dropped_chunk_ids=("oversized",),
     )
     mock_llm.assert_not_called()
 

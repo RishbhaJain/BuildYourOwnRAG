@@ -8,7 +8,11 @@ from html import escape
 
 import config
 from llm import call_llm, call_llm_with_metrics
-from llms.context_safety import ContextSafetyResult, filter_untrusted_passages
+from llms.context_safety import (
+    ContextSafetyResult,
+    enforce_context_budget,
+    filter_untrusted_passages,
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,7 @@ class GenerationResult:
     ttft_seconds: float | None = None
     provider_called: bool = True
     safety_filtered_chunk_ids: tuple[str, ...] = ()
+    context_budget_dropped_chunk_ids: tuple[str, ...] = ()
 
 
 class ProviderGenerationError(RuntimeError):
@@ -70,11 +75,16 @@ def format_context(passages: list[dict]) -> str:
 
 
 def build_safe_query(
-    question: str, passages: list[dict]
+    question: str,
+    passages: list[dict],
+    max_context_chars: int = config.MAX_CONTEXT_CHARS,
 ) -> tuple[str, ContextSafetyResult]:
     """Build a boundary-escaped prompt and return its quarantine report."""
 
-    safety = filter_untrusted_passages(passages)
+    safety = enforce_context_budget(
+        filter_untrusted_passages(passages),
+        max_context_chars,
+    )
     context = format_context(list(safety.passages))
     query = (
         f"<retrieved_context>\n{context}\n</retrieved_context>\n\n"
@@ -109,6 +119,7 @@ def generate_answer(
     model: str = config.LLM_MODEL,
     max_tokens: int = config.MAX_NEW_TOKENS,
     fallback: str = "Unknown",
+    max_context_chars: int = config.MAX_CONTEXT_CHARS,
 ) -> str:
     """Generate an answer for a question given retrieved passages.
 
@@ -122,7 +133,7 @@ def generate_answer(
     Returns:
         A short answer string.
     """
-    query, safety = build_safe_query(question, passages)
+    query, safety = build_safe_query(question, passages, max_context_chars)
     if not safety.passages:
         return fallback
     try:
@@ -146,14 +157,16 @@ def generate_answer_with_metrics(
     model: str = config.LLM_MODEL,
     max_tokens: int = config.MAX_NEW_TOKENS,
     fallback: str = "Unknown",
+    max_context_chars: int = config.MAX_CONTEXT_CHARS,
 ) -> GenerationResult:
     """Generate an answer and preserve provider latency, usage, and cost."""
-    query, safety = build_safe_query(question, passages)
+    query, safety = build_safe_query(question, passages, max_context_chars)
     if not safety.passages:
         return GenerationResult(
             answer=fallback,
             provider_called=False,
             safety_filtered_chunk_ids=safety.filtered_chunk_ids,
+            context_budget_dropped_chunk_ids=safety.budget_dropped_chunk_ids,
         )
     try:
         response = call_llm_with_metrics(
@@ -175,4 +188,5 @@ def generate_answer_with_metrics(
         cost_usd=response.cost_usd,
         ttft_seconds=response.ttft_seconds,
         safety_filtered_chunk_ids=safety.filtered_chunk_ids,
+        context_budget_dropped_chunk_ids=safety.budget_dropped_chunk_ids,
     )
