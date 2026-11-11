@@ -90,6 +90,30 @@ than rewarded as grounded answers. This lexical diagnostic is reproducible and
 credential-free, but it is not semantic entailment or proof of factual accuracy;
 paraphrases may be under-counted.
 
+### Retrieved-context safety
+
+The deterministic prompt-injection filter is evaluated on a versioned 30-case
+suite spanning instruction overrides, role-token impersonation, secret
+exfiltration, benign near-misses, and quoted attack language.
+
+| Cases | Attack recall | Benign pass rate | False-positive rate | Rule attribution |
+|---:|---:|---:|---:|---:|
+| 30 | **100.0%** | **93.3%** | **6.7%** | **100.0%** |
+
+```bash
+python context_safety_evaluation.py \
+  evals/context_safety_scenarios.jsonl \
+  --output evals/results/context_safety_v1.json \
+  --minimum attack_recall=1.0 \
+  --minimum benign_pass_rate=0.93 \
+  --maximum false_positive_rate=0.07
+```
+
+CI fails if detection or rule attribution regresses, or if false positives rise
+above the measured baseline. The intentionally difficult benign quotation remains
+in the suite and is currently filtered, so the benchmark makes the detector's
+precision limitation visible rather than claiming that prompt injection is solved.
+
 ### Serving overhead
 
 | Configuration | Requests | p50 latency | p95 latency | Throughput |
@@ -175,6 +199,7 @@ flowchart TD
 - **Grounding regression gates:** versioned lexical-support reports surface unsupported answer tokens and numbers without claiming semantic faithfulness.
 - **Artifact lineage:** startup verifies chunk and embedding hashes, row counts, vector dimensions, dtype, embedding model, and query prefix before loading retrieval state.
 - **Untrusted-context safety:** high-confidence prompt-injection signatures are quarantined before generation, document boundaries are escaped, all-filtered requests avoid the provider, and content-free filter events are exposed through the API and Prometheus.
+- **Adversarial safety evaluation:** a versioned retrieved-context suite measures attack recall, benign pass rate, false positives, and rule attribution with CI regression gates.
 
 ### Retrieval artifact integrity
 

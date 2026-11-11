@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 _INJECTION_RULES = {
     "instruction_override": re.compile(
-        r"\b(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)\s+"
+        r"\b(?:ignore|disregard|forget)\s+(?:(?:all|the)\s+)?(?:previous|prior|above)\s+"
         r"(?:instructions?|messages?|rules?)\b",
         re.IGNORECASE,
     ),
