@@ -49,7 +49,9 @@ def export_to_jsonl(
             all_meta.append((meta, raw_dir))
 
     if not all_meta:
-        logger.warning("No metadata files found in %s. Run the crawler first.", raw_dirs)
+        logger.warning(
+            "No metadata files found in %s. Run the crawler first.", raw_dirs
+        )
         return 0, 0
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -66,7 +68,6 @@ def export_to_jsonl(
             if page_id in seen_ids:
                 skipped += 1
                 continue
-            seen_ids.add(page_id)
 
             html = load_html(page_id, raw_dir)
 
@@ -91,7 +92,10 @@ def export_to_jsonl(
                 "extractor": cleaned["extractor"],
             }
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
+            seen_ids.add(page_id)
             written += 1
 
-    logger.info("Export complete: %d written, %d skipped → %s", written, skipped, output_path)
+    logger.info(
+        "Export complete: %d written, %d skipped → %s", written, skipped, output_path
+    )
     return written, skipped
