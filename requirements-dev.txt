@@ -1,4 +1,5 @@
 -r requirements-service.txt
+beautifulsoup4>=4.12
 httpx2>=2.13
 pytest>=8,<10
 ruff>=0.16

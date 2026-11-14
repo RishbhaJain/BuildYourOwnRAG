@@ -38,6 +38,8 @@ jobs:
             context_safety_evaluation.py \
             validate_retrieval_artifacts.py \
             retrieval_evaluation.py \
+            exporter/to_jsonl.py \
+            run_exporter.py \
             crawler/fetcher.py \
             llm.py \
             llms/context_safety.py \
@@ -53,6 +55,7 @@ jobs:
             tests/test_llm.py \
             tests/test_context_safety.py \
             tests/test_context_safety_evaluation.py \
+            tests/test_to_jsonl.py \
             tests/test_service_api.py \
             tests/test_service_pipeline.py \
             retriever/artifacts.py \
@@ -67,6 +70,8 @@ jobs:
             grounding_evaluation.py \
             context_safety_evaluation.py \
             validate_retrieval_artifacts.py \
+            exporter/to_jsonl.py \
+            run_exporter.py \
             crawler/fetcher.py \
             llm.py \
             llms/context_safety.py \
@@ -81,6 +86,7 @@ jobs:
             tests/test_llm.py \
             tests/test_context_safety.py \
             tests/test_context_safety_evaluation.py \
+            tests/test_to_jsonl.py \
             tests/test_service_api.py \
             tests/test_service_pipeline.py \
             retriever/artifacts.py \
@@ -101,6 +107,7 @@ jobs:
             tests/test_fetcher.py \
             tests/test_context_safety.py \
             tests/test_context_safety_evaluation.py \
+            tests/test_to_jsonl.py \
             tests/test_llm.py \
             tests/test_live_benchmark.py \
             tests/test_service_pipeline.py \
