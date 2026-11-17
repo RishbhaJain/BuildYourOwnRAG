@@ -190,6 +190,8 @@ flowchart TD
 - **Efficient inference path:** the embedding model, FAISS index, corpus, and BM25 state load once at process startup.
 - **Measured online serving:** FastAPI endpoints return selected chunk IDs plus embedding, dense retrieval, BM25, fusion, generation, and total latency.
 - **Operational visibility:** Prometheus counters, readiness state, request/failure/fallback rates, and per-stage latency histograms.
+- **Request correlation:** each API response returns a bounded `X-Request-ID` in both
+  its headers and answer payload, while structured logs retain the same identifier.
 - **Overload protection:** bounded inference concurrency rejects excess work with HTTP 503 and `Retry-After` instead of allowing unbounded queue growth.
 - **Measured optimization:** a bounded TTL response cache and single-flight request coalescing report hit/miss/coalesced/bypass metrics while avoiding repeat retrieval, generation, token usage, and provider cost.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
@@ -310,10 +312,12 @@ curl -X POST http://localhost:8000/answer \
   -d '{"question":"Who leads the GamesCrafters group?","top_k":5}'
 ```
 
-The response includes the answer, fallback status, selected chunk IDs, and stage timings:
+The response includes its correlation ID, answer, fallback status, selected chunk IDs,
+and stage timings:
 
 ```json
 {
+  "request_id": "7b25136ff43045e0b6c6c575f194b46f",
   "answer": "Dan Garcia",
   "retrieved_chunk_ids": ["chunk-123", "chunk-456"],
   "safety_filtered_chunk_ids": [],
@@ -364,6 +368,9 @@ Prometheus can calculate p50 and p95 latency from the request and stage histogra
 Concurrent identical cache misses are coalesced into one retrieval and provider call.
 Followers report `cache_status="coalesced"`, zero provider usage, and a
 `coalescing_wait` timing instead of duplicating paid inference.
+Request IDs are deliberately excluded from Prometheus labels to avoid unbounded
+metric cardinality. Callers may supply a safe 1-to-128 character `X-Request-ID`;
+missing or malformed values are replaced with a generated identifier.
 
 ## Run with Docker
 
@@ -434,6 +441,8 @@ These tests require no model download, external service, or API key. CI also bui
 - Repeated successful queries are cached by whitespace-trimmed, case-sensitive question and retrieval depth; every result reports `hit`, `miss`, or `bypass`, so disabled and intentionally skipped caches are not counted as misses.
 - Liveness remains available when model initialization fails, while readiness correctly returns HTTP 503.
 - API failures return a stable public error and keep backend details in server logs.
+- Safe caller request IDs are propagated across API headers, answer payloads, and
+  structured success/failure logs for incident correlation.
 - Inference admission caps concurrent work and exposes queue wait, in-flight load,
   and overload rejection metrics for capacity planning.
 - Upstream generation failures retain a typed error signal, return HTTP 502, increment
@@ -447,5 +456,5 @@ These tests require no model download, external service, or API key. CI also bui
 - Grounding diagnostics measure lexical evidence coverage, not semantic entailment; supported wording can still be factually wrong.
 - The committed latency benchmark measures deterministic serving overhead, not live model or provider latency.
 - Full generation requires an OpenRouter key, local model storage, and enough memory for the embedding model.
-- Authentication, rate limiting, distributed tracing, and multi-worker Prometheus aggregation are not yet implemented.
+- Authentication, rate limiting, cross-service distributed tracing, and multi-worker Prometheus aggregation are not yet implemented.
 - Web content and reference answers are a point-in-time snapshot and should be refreshed before evaluating current facts.

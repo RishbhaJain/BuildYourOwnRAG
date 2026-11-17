@@ -20,6 +20,8 @@ def test_health_readiness_answer_and_metrics():
         )
         assert response.status_code == 200
         payload = response.json()
+        assert response.headers["X-Request-ID"] == payload["request_id"]
+        assert len(payload["request_id"]) == 32
         assert payload["answer"] == "Mock answer"
         assert payload["fallback"] is False
         assert payload["cache_hit"] is False
@@ -59,6 +61,47 @@ def test_health_readiness_answer_and_metrics():
         assert "rag_service_ready 1.0" in metrics.text
 
 
+def test_safe_caller_request_id_is_correlated_across_response_and_logs(caplog):
+    request_id = "client.trace:request-42"
+    with (
+        caplog.at_level("INFO", logger="service.app"),
+        TestClient(create_app(build_mock_pipeline)) as client,
+    ):
+        response = client.post(
+            "/answer",
+            headers={"X-Request-ID": request_id},
+            json={"question": "test"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == request_id
+    assert response.json()["request_id"] == request_id
+    completed = next(
+        record
+        for record in caplog.records
+        if record.message == "RAG answer request completed."
+    )
+    assert completed.request_id == request_id
+    assert completed.cache_status == "miss"
+    assert completed.provider_called is True
+    assert completed.retrieved_chunks == 2
+    assert completed.elapsed_ms >= 0
+
+
+def test_malformed_caller_request_id_is_replaced():
+    with TestClient(create_app(build_mock_pipeline)) as client:
+        response = client.post(
+            "/answer",
+            headers={"X-Request-ID": "unsafe id with spaces"},
+            json={"question": "test"},
+        )
+
+    generated = response.headers["X-Request-ID"]
+    assert generated != "unsafe id with spaces"
+    assert len(generated) == 32
+    assert response.json()["request_id"] == generated
+
+
 def test_whitespace_question_is_rejected():
     with TestClient(create_app(build_mock_pipeline)) as client:
         response = client.post("/answer", json={"question": "   "})
@@ -79,17 +122,33 @@ def test_failed_startup_keeps_liveness_endpoint_available():
         }
 
 
-def test_inference_failure_is_counted_without_leaking_exception_details():
+def test_inference_failure_is_counted_without_leaking_exception_details(caplog):
     class BrokenPipeline:
         def answer(self, question, top_k, use_cache):
             raise RuntimeError("secret backend detail")
 
-    with TestClient(create_app(lambda: BrokenPipeline())) as client:
-        response = client.post("/answer", json={"question": "test"})
-        assert response.status_code == 500
-        assert response.json() == {"detail": "RAG inference failed"}
+    request_id = "failed-request-7"
+    with (
+        caplog.at_level("ERROR", logger="service.app"),
+        TestClient(create_app(lambda: BrokenPipeline())) as client,
+    ):
+        response = client.post(
+            "/answer",
+            headers={"X-Request-ID": request_id},
+            json={"question": "test"},
+        )
         metrics = client.get("/metrics").text
         assert 'rag_request_failures_total{category="internal"} 1.0' in metrics
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "RAG inference failed"}
+    assert response.headers["X-Request-ID"] == request_id
+    failed = [
+        record
+        for record in caplog.records
+        if record.message == "RAG answer request failed."
+    ]
+    assert any(record.request_id == request_id for record in failed)
 
 
 def test_provider_failure_returns_bad_gateway_and_is_counted_separately():
