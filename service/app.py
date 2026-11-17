@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Literal
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -22,6 +24,15 @@ from service.pipeline import RAGPipeline, create_pipeline_from_environment
 
 logger = logging.getLogger(__name__)
 PipelineFactory = Callable[[], RAGPipeline]
+REQUEST_ID_HEADER = "X-Request-ID"
+REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+
+def resolve_request_id(candidate: str | None) -> str:
+    """Preserve safe caller IDs and replace malformed values with a local UUID."""
+    if candidate and REQUEST_ID_PATTERN.fullmatch(candidate):
+        return candidate
+    return uuid4().hex
 
 
 class AnswerRequest(BaseModel):
@@ -39,6 +50,7 @@ class AnswerRequest(BaseModel):
 
 
 class AnswerResponse(BaseModel):
+    request_id: str
     answer: str
     retrieved_chunk_ids: list[str]
     fallback: bool
@@ -101,6 +113,14 @@ def create_app(
     app.state.metrics = metrics
     app.state.admission = admission
 
+    @app.middleware("http")
+    async def correlate_request(request: Request, call_next):
+        request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+
     @app.get("/")
     async def root():
         return {
@@ -128,7 +148,9 @@ def create_app(
         return {"status": "ready"}
 
     @app.post("/answer", response_model=AnswerResponse)
-    async def answer(request: AnswerRequest):
+    async def answer(payload: AnswerRequest, request: Request):
+        request_id = request.state.request_id
+        log_context = {"request_id": request_id}
         pipeline = app.state.pipeline
         if pipeline is None:
             raise HTTPException(status_code=503, detail="RAG pipeline is not ready")
@@ -137,6 +159,10 @@ def create_app(
         decision = await run_in_threadpool(admission.acquire)
         metrics.observe_admission(decision.wait_seconds, decision.admitted)
         if not decision.admitted:
+            logger.warning(
+                "RAG answer request rejected at capacity.",
+                extra=log_context,
+            )
             raise HTTPException(
                 status_code=503,
                 detail="RAG service is at capacity",
@@ -148,23 +174,26 @@ def create_app(
         try:
             result = await run_in_threadpool(
                 pipeline.answer,
-                request.question,
-                request.top_k,
-                request.use_cache,
+                payload.question,
+                payload.top_k,
+                payload.use_cache,
             )
         except ProviderGenerationError:
             metrics.observe_failure(
                 time.perf_counter() - started,
                 category="provider",
             )
-            logger.exception("LLM provider failed during RAG inference.")
+            logger.exception(
+                "LLM provider failed during RAG inference.",
+                extra=log_context,
+            )
             raise HTTPException(status_code=502, detail="LLM provider failed") from None
         except Exception:
             metrics.observe_failure(
                 time.perf_counter() - started,
                 category="internal",
             )
-            logger.exception("RAG answer request failed.")
+            logger.exception("RAG answer request failed.", extra=log_context)
             raise HTTPException(
                 status_code=500, detail="RAG inference failed"
             ) from None
@@ -184,7 +213,18 @@ def create_app(
             safety_filtered_chunks=len(result.safety_filtered_chunk_ids),
             context_budget_dropped_chunks=len(result.context_budget_dropped_chunk_ids),
         )
+        logger.info(
+            "RAG answer request completed.",
+            extra={
+                **log_context,
+                "cache_status": result.cache_status,
+                "provider_called": result.provider_called,
+                "retrieved_chunks": len(result.retrieved_chunk_ids),
+                "elapsed_ms": round((time.perf_counter() - started) * 1_000, 3),
+            },
+        )
         return AnswerResponse(
+            request_id=request_id,
             answer=result.answer,
             retrieved_chunk_ids=result.retrieved_chunk_ids,
             fallback=result.fallback,
