@@ -6,6 +6,7 @@ from benchmarks.benchmark_live import (
     Sample,
     _http_failure_category,
     benchmark,
+    evaluate_slo_gate,
     main,
     summarize,
 )
@@ -98,6 +99,63 @@ def test_failed_requests_do_not_inflate_successful_throughput():
     assert result["provider_completion_tokens_per_second"] is None
 
 
+def test_slo_gate_attributes_violations_to_mode_and_concurrency():
+    results = [
+        {
+            "mode": "baseline_cache_bypassed",
+            "concurrency": 4,
+            "failure_rate": 0.1,
+            "fallback_rate": 0.2,
+            "latency_ms": {"p95": 900.0},
+        },
+        {
+            "mode": "optimized_warm_cache",
+            "concurrency": 4,
+            "failure_rate": 0.0,
+            "fallback_rate": 0.0,
+            "latency_ms": {"p95": 20.0},
+        },
+    ]
+
+    gate = evaluate_slo_gate(
+        results,
+        maximum_failure_rate=0.05,
+        maximum_fallback_rate=0.1,
+        maximum_p95_latency_ms=800.0,
+    )
+
+    assert gate["evaluated"] is True
+    assert gate["passed"] is False
+    assert gate["thresholds"] == {
+        "maximum_failure_rate": 0.05,
+        "maximum_fallback_rate": 0.1,
+        "maximum_p95_latency_ms": 800.0,
+    }
+    assert {violation["metric"] for violation in gate["violations"]} == {
+        "failure_rate",
+        "fallback_rate",
+        "p95_latency_ms",
+    }
+    assert all(
+        violation["mode"] == "baseline_cache_bypassed" and violation["concurrency"] == 4
+        for violation in gate["violations"]
+    )
+
+
+def test_slo_gate_is_explicitly_unevaluated_without_thresholds():
+    gate = evaluate_slo_gate([], maximum_failure_rate=None)
+
+    assert gate == {
+        "evaluated": False,
+        "passed": None,
+        "thresholds": {},
+        "violations": [],
+    }
+
+    with pytest.raises(ValueError, match="at least one benchmark result"):
+        evaluate_slo_gate([], maximum_failure_rate=0.0)
+
+
 def test_empty_workload_fails_before_contacting_service(monkeypatch):
     def fail_if_called(*args, **kwargs):
         raise AssertionError("an invalid workload must not contact the service")
@@ -117,6 +175,45 @@ def test_invalid_concurrency_fails_before_contacting_service(monkeypatch, levels
     monkeypatch.setattr("benchmarks.benchmark_live._check_ready", fail_if_called)
     with pytest.raises(ValueError, match="positive integers"):
         benchmark("http://localhost:8000", ["question"], levels, 1.0)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"maximum_failure_rate": -0.01},
+        {"maximum_fallback_rate": 1.01},
+        {"maximum_p95_latency_ms": 0.0},
+    ],
+)
+def test_invalid_slo_thresholds_fail_before_contacting_service(monkeypatch, kwargs):
+    def fail_if_called(*args, **call_kwargs):
+        raise AssertionError("invalid SLOs must not contact the service")
+
+    monkeypatch.setattr("benchmarks.benchmark_live._check_ready", fail_if_called)
+    with pytest.raises(ValueError):
+        benchmark(
+            "http://localhost:8000",
+            ["question"],
+            [1],
+            1.0,
+            **kwargs,
+        )
+
+
+def test_cli_returns_nonzero_when_slo_gate_fails(monkeypatch, tmp_path):
+    questions_file = tmp_path / "questions.txt"
+    questions_file.write_text("question\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "benchmarks.benchmark_live.benchmark",
+        lambda *args, **kwargs: {"slo_gate": {"passed": False}},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["benchmark_live", "--questions", str(questions_file)],
+    )
+
+    assert main() == 1
 
 
 @pytest.mark.parametrize(

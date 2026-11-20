@@ -167,6 +167,77 @@ def summarize(samples: list[Sample], wall_seconds: float) -> dict[str, object]:
     }
 
 
+def _validated_slo_thresholds(
+    *,
+    maximum_failure_rate: float | None = None,
+    maximum_fallback_rate: float | None = None,
+    maximum_p95_latency_ms: float | None = None,
+) -> dict[str, float]:
+    thresholds = {
+        "maximum_failure_rate": maximum_failure_rate,
+        "maximum_fallback_rate": maximum_fallback_rate,
+        "maximum_p95_latency_ms": maximum_p95_latency_ms,
+    }
+    for name in ("maximum_failure_rate", "maximum_fallback_rate"):
+        value = thresholds[name]
+        if value is not None and (not math.isfinite(value) or not 0 <= value <= 1):
+            raise ValueError(f"{name} must be between zero and one")
+    if maximum_p95_latency_ms is not None and (
+        not math.isfinite(maximum_p95_latency_ms) or maximum_p95_latency_ms <= 0
+    ):
+        raise ValueError("maximum_p95_latency_ms must be positive")
+    return {name: value for name, value in thresholds.items() if value is not None}
+
+
+def evaluate_slo_gate(
+    results: list[dict[str, object]],
+    *,
+    maximum_failure_rate: float | None = None,
+    maximum_fallback_rate: float | None = None,
+    maximum_p95_latency_ms: float | None = None,
+) -> dict[str, object]:
+    """Evaluate every measured mode and concurrency against explicit SLOs."""
+    configured = _validated_slo_thresholds(
+        maximum_failure_rate=maximum_failure_rate,
+        maximum_fallback_rate=maximum_fallback_rate,
+        maximum_p95_latency_ms=maximum_p95_latency_ms,
+    )
+    if configured and not results:
+        raise ValueError("SLO evaluation requires at least one benchmark result")
+    violations: list[dict[str, object]] = []
+    for result in results:
+        identity = {
+            "mode": result["mode"],
+            "concurrency": result["concurrency"],
+        }
+        observations = (
+            ("failure_rate", "maximum_failure_rate", result["failure_rate"]),
+            ("fallback_rate", "maximum_fallback_rate", result["fallback_rate"]),
+            ("p95_latency_ms", "maximum_p95_latency_ms", result["latency_ms"]["p95"]),
+        )
+        for metric, threshold_name, actual in observations:
+            if threshold_name not in configured:
+                continue
+            threshold = configured[threshold_name]
+            if actual is None or float(actual) > threshold:
+                violations.append(
+                    {
+                        **identity,
+                        "metric": metric,
+                        "actual": actual,
+                        "threshold": threshold,
+                        "reason": "unavailable" if actual is None else "above_maximum",
+                    }
+                )
+
+    return {
+        "evaluated": bool(configured),
+        "passed": not violations if configured else None,
+        "thresholds": configured,
+        "violations": violations,
+    }
+
+
 def _check_ready(base_url: str, timeout_seconds: float) -> None:
     with urllib.request.urlopen(
         f"{base_url.rstrip('/')}/ready", timeout=timeout_seconds
@@ -181,6 +252,10 @@ def benchmark(
     questions: list[str],
     concurrency_levels: list[int],
     timeout_seconds: float,
+    *,
+    maximum_failure_rate: float | None = None,
+    maximum_fallback_rate: float | None = None,
+    maximum_p95_latency_ms: float | None = None,
 ) -> dict[str, object]:
     if not questions:
         raise ValueError("questions file contains no benchmark questions")
@@ -188,6 +263,11 @@ def benchmark(
         raise ValueError("concurrency levels must be positive integers")
     if timeout_seconds <= 0:
         raise ValueError("timeout must be positive")
+    _validated_slo_thresholds(
+        maximum_failure_rate=maximum_failure_rate,
+        maximum_fallback_rate=maximum_fallback_rate,
+        maximum_p95_latency_ms=maximum_p95_latency_ms,
+    )
     _check_ready(base_url, timeout_seconds)
     results = []
     for concurrency in concurrency_levels:
@@ -229,23 +309,33 @@ def benchmark(
             }
         )
 
+    slo_gate = evaluate_slo_gate(
+        results,
+        maximum_failure_rate=maximum_failure_rate,
+        maximum_fallback_rate=maximum_fallback_rate,
+        maximum_p95_latency_ms=maximum_p95_latency_ms,
+    )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "endpoint": base_url,
         "question_count": len(questions),
         "concurrency_levels": concurrency_levels,
         "cache_warmup": summarize(warmup_samples, warmup_wall),
         "results": results,
+        "slo_gate": slo_gate,
     }
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--questions", type=Path, default=Path("questions.txt"))
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--concurrency", default="1,4,8")
     parser.add_argument("--timeout", type=float, default=60)
+    parser.add_argument("--maximum-failure-rate", type=float)
+    parser.add_argument("--maximum-fallback-rate", type=float)
+    parser.add_argument("--maximum-p95-latency-ms", type=float)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -264,6 +354,9 @@ def main() -> None:
             questions,
             concurrency_levels,
             args.timeout,
+            maximum_failure_rate=args.maximum_failure_rate,
+            maximum_fallback_rate=args.maximum_fallback_rate,
+            maximum_p95_latency_ms=args.maximum_p95_latency_ms,
         )
     except ValueError as exc:
         parser.error(str(exc))
@@ -273,7 +366,8 @@ def main() -> None:
         args.output.write_text(rendered, encoding="utf-8")
     else:
         print(rendered, end="")
+    return int(result["slo_gate"]["passed"] is False)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

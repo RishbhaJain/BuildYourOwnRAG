@@ -183,8 +183,11 @@ jobs:
             --questions questions.txt \
             --limit 3 \
             --concurrency 1,2 \
+            --maximum-failure-rate 0 \
+            --maximum-fallback-rate 0 \
+            --maximum-p95-latency-ms 1000 \
             --output /tmp/live-benchmark.json
-          python -c "import json; data=json.load(open('/tmp/live-benchmark.json')); assert len(data['results']) == 4"
+          python -c "import json; data=json.load(open('/tmp/live-benchmark.json')); assert len(data['results']) == 4; assert data['slo_gate']['passed']"
 
       - name: Show container logs
         if: always()

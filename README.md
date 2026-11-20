@@ -144,6 +144,9 @@ python -m benchmarks.benchmark_live \
   --questions questions.txt \
   --limit 100 \
   --concurrency 1,4,8 \
+  --maximum-failure-rate 0.02 \
+  --maximum-fallback-rate 0.10 \
+  --maximum-p95-latency-ms 5000 \
   --output benchmarks/results/live_service.json
 ```
 
@@ -151,6 +154,12 @@ The run compares uncached requests against the same workload after warming the
 bounded TTL response cache. It never substitutes mock latency for live-model
 results. Provider usage is read from OpenRouter's streamed response rather than
 estimated from a local tokenizer.
+When SLO thresholds are supplied, every measured cache mode and concurrency must
+pass all configured limits. The versioned result records each violation with its
+mode, concurrency, observed value, and threshold, and the command exits nonzero
+when a gate fails so the benchmark can protect a deployment rather than merely
+describe it. Choose thresholds from a real target environment; the example values
+are illustrative, not measured production claims.
 
 ## Architecture
 
