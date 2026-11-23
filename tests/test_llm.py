@@ -1,13 +1,14 @@
-"""Tests for the generator module (llms/llm_pipeline.py).
+"""Tests for the provider client and generator module.
 
-These tests mock call_llm so they run without an API key.
+Provider calls are mocked so the suite runs without network access or an API key.
 """
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
-from llm import LLMResponse
+from llm import LLMResponse, call_llm, call_llm_with_metrics
 from llms.llm_pipeline import (
     GenerationResult,
     ProviderGenerationError,
@@ -18,6 +19,111 @@ from llms.llm_pipeline import (
     generate_answer_with_metrics,
     postprocess_answer,
 )
+
+
+def _provider_response(
+    status_code: int,
+    *,
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+    stream_lines: list[str] | None = None,
+):
+    response = Mock(spec=requests.Response)
+    response.status_code = status_code
+    response.headers = headers or {}
+    response.json.return_value = payload or {}
+    response.iter_lines.return_value = stream_lines or []
+    if status_code >= 400:
+        response.raise_for_status.side_effect = requests.HTTPError(
+            f"provider returned {status_code}", response=response
+        )
+    return response
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.requests.post")
+def test_provider_retries_transient_status_then_succeeds(mock_post, mock_sleep):
+    unavailable = _provider_response(503)
+    success = _provider_response(
+        200,
+        payload={"choices": [{"message": {"content": "Recovered"}}]},
+    )
+    mock_post.side_effect = [unavailable, success]
+
+    assert call_llm("question") == "Recovered"
+    assert mock_post.call_count == 2
+    unavailable.close.assert_called_once()
+    mock_sleep.assert_called_once_with(0.25)
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.requests.post")
+def test_provider_retry_honors_bounded_retry_after(mock_post, mock_sleep):
+    limited = _provider_response(429, headers={"Retry-After": "30"})
+    success = _provider_response(
+        200,
+        stream_lines=[
+            'data: {"choices":[{"delta":{"content":"Recovered"}}]}',
+            'data: {"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}',
+            "data: [DONE]",
+        ],
+    )
+    mock_post.side_effect = [limited, success]
+
+    result = call_llm_with_metrics("question")
+
+    assert result.content == "Recovered"
+    assert result.total_tokens == 5
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once_with(5.0)
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.requests.post")
+def test_provider_does_not_retry_non_transient_status(mock_post, mock_sleep):
+    mock_post.return_value = _provider_response(400)
+
+    with pytest.raises(RuntimeError, match="OpenRouter HTTP error"):
+        call_llm("question")
+
+    mock_post.assert_called_once()
+    mock_sleep.assert_not_called()
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.requests.post")
+def test_provider_stops_after_bounded_transient_attempts(mock_post, mock_sleep):
+    responses = [_provider_response(503) for _ in range(3)]
+    mock_post.side_effect = responses
+
+    with pytest.raises(RuntimeError, match="OpenRouter HTTP error"):
+        call_llm("question")
+
+    assert mock_post.call_count == 3
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [0.25, 0.5]
+    responses[0].close.assert_called_once()
+    responses[1].close.assert_called_once()
+    responses[2].close.assert_not_called()
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.requests.post")
+def test_provider_does_not_replay_failed_stream(mock_post, mock_sleep):
+    response = _provider_response(200)
+    response.iter_lines.side_effect = requests.ConnectionError("stream interrupted")
+    mock_post.return_value = response
+
+    with pytest.raises(RuntimeError, match="OpenRouter connection failed"):
+        call_llm_with_metrics("question")
+
+    mock_post.assert_called_once()
+    mock_sleep.assert_not_called()
+
 
 # --- format_context ---
 

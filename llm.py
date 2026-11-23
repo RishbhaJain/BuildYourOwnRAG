@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -15,6 +16,59 @@ ALLOWED_MODELS = [
     "mistralai/mistral-7b-instruct",
 ]
 DEFAULT_MODEL = ALLOWED_MODELS[0]
+TRANSIENT_PROVIDER_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+PROVIDER_MAX_ATTEMPTS = 3
+PROVIDER_RETRY_BACKOFF_SECONDS = 0.25
+PROVIDER_MAX_RETRY_DELAY_SECONDS = 5.0
+
+logger = logging.getLogger(__name__)
+
+
+def _retry_delay_seconds(response: requests.Response, retry_number: int) -> float:
+    """Return a bounded provider-directed or exponential retry delay."""
+    retry_after = response.headers.get("Retry-After")
+    if retry_after is not None:
+        try:
+            delay = float(retry_after)
+        except ValueError:
+            delay = -1.0
+        if delay >= 0:
+            return min(delay, PROVIDER_MAX_RETRY_DELAY_SECONDS)
+    return min(
+        PROVIDER_RETRY_BACKOFF_SECONDS * (2 ** (retry_number - 1)),
+        PROVIDER_MAX_RETRY_DELAY_SECONDS,
+    )
+
+
+def _post_with_transient_retries(**kwargs) -> requests.Response:
+    """Retry explicit transient HTTP failures before response consumption.
+
+    Network exceptions are not retried because a completion may already have
+    been accepted and billed. Streaming read failures are also surfaced after
+    the successful response is returned, so partial generations are never
+    replayed.
+    """
+    for attempt in range(1, PROVIDER_MAX_ATTEMPTS + 1):
+        response = requests.post(OPENROUTER_URL, **kwargs)
+        if (
+            response.status_code not in TRANSIENT_PROVIDER_STATUS_CODES
+            or attempt == PROVIDER_MAX_ATTEMPTS
+        ):
+            return response
+
+        delay = _retry_delay_seconds(response, attempt)
+        logger.warning(
+            "Retrying transient OpenRouter response.",
+            extra={
+                "provider_status_code": response.status_code,
+                "provider_attempt": attempt,
+                "retry_delay_seconds": delay,
+            },
+        )
+        response.close()
+        time.sleep(delay)
+
+    raise AssertionError("provider retry loop must return a response")
 
 
 @dataclass(frozen=True)
@@ -58,8 +112,7 @@ def call_llm(
     messages.append({"role": "user", "content": query})
 
     try:
-        response = requests.post(
-            OPENROUTER_URL,
+        response = _post_with_transient_retries(
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -117,8 +170,7 @@ def call_llm_with_metrics(
 
     started = time.perf_counter()
     try:
-        response = requests.post(
-            OPENROUTER_URL,
+        response = _post_with_transient_retries(
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
