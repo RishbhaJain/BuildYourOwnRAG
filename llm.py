@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -40,7 +41,24 @@ def _retry_delay_seconds(response: requests.Response, retry_number: int) -> floa
     )
 
 
-def _post_with_transient_retries(**kwargs) -> requests.Response:
+def _provider_deadline(timeout: float) -> float:
+    """Return one monotonic deadline shared by every provider attempt."""
+    if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+        raise TypeError("timeout must be a finite positive number")
+    timeout = float(timeout)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout must be a finite positive number")
+    return time.monotonic() + timeout
+
+
+def _remaining_seconds(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise requests.Timeout("OpenRouter request deadline exceeded")
+    return remaining
+
+
+def _post_with_transient_retries(*, deadline: float, **kwargs) -> requests.Response:
     """Retry explicit transient HTTP failures before response consumption.
 
     Network exceptions are not retried because a completion may already have
@@ -49,7 +67,14 @@ def _post_with_transient_retries(**kwargs) -> requests.Response:
     replayed.
     """
     for attempt in range(1, PROVIDER_MAX_ATTEMPTS + 1):
-        response = requests.post(OPENROUTER_URL, **kwargs)
+        response = requests.post(
+            OPENROUTER_URL,
+            timeout=_remaining_seconds(deadline),
+            **kwargs,
+        )
+        if time.monotonic() >= deadline:
+            response.close()
+            raise requests.Timeout("OpenRouter request deadline exceeded")
         if (
             response.status_code not in TRANSIENT_PROVIDER_STATUS_CODES
             or attempt == PROVIDER_MAX_ATTEMPTS
@@ -57,6 +82,10 @@ def _post_with_transient_retries(**kwargs) -> requests.Response:
             return response
 
         delay = _retry_delay_seconds(response, attempt)
+        remaining = deadline - time.monotonic()
+        if delay >= remaining:
+            response.close()
+            raise requests.Timeout("OpenRouter retry budget exhausted")
         logger.warning(
             "Retrying transient OpenRouter response.",
             extra={
@@ -111,8 +140,11 @@ def call_llm(
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": query})
 
+    deadline = _provider_deadline(timeout)
+    response = None
     try:
         response = _post_with_transient_retries(
+            deadline=deadline,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -123,10 +155,10 @@ def call_llm(
                 "max_tokens": max_tokens,
                 "temperature": temperature,
             },
-            timeout=timeout,
         )
         response.raise_for_status()
         data = response.json()
+        _remaining_seconds(deadline)
     except requests.Timeout:
         raise RuntimeError("OpenRouter request timed out") from None
     except requests.ConnectionError as e:
@@ -135,6 +167,9 @@ def call_llm(
         raise RuntimeError(f"OpenRouter HTTP error: {e}") from None
     except ValueError as e:
         raise RuntimeError(f"OpenRouter invalid JSON: {e}") from None
+    finally:
+        if response is not None:
+            response.close()
 
     if data.get("choices"):
         try:
@@ -169,8 +204,11 @@ def call_llm_with_metrics(
     messages.append({"role": "user", "content": query})
 
     started = time.perf_counter()
+    deadline = _provider_deadline(timeout)
+    response = None
     try:
         response = _post_with_transient_retries(
+            deadline=deadline,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -183,7 +221,6 @@ def call_llm_with_metrics(
                 "stream": True,
                 "stream_options": {"include_usage": True},
             },
-            timeout=timeout,
             stream=True,
         )
         response.raise_for_status()
@@ -192,6 +229,7 @@ def call_llm_with_metrics(
         usage: dict[str, object] = {}
         ttft_seconds = None
         for raw_line in response.iter_lines(decode_unicode=True):
+            _remaining_seconds(deadline)
             if not raw_line or raw_line.startswith(":"):
                 continue
             line = raw_line[5:].strip() if raw_line.startswith("data:") else raw_line
@@ -217,6 +255,9 @@ def call_llm_with_metrics(
         raise RuntimeError(f"OpenRouter HTTP error: {exc}") from None
     except (json.JSONDecodeError, TypeError) as exc:
         raise RuntimeError(f"OpenRouter invalid streaming response: {exc}") from None
+    finally:
+        if response is not None:
+            response.close()
 
     content = "".join(content_parts).strip()
     if not content:
