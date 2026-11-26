@@ -203,6 +203,7 @@ flowchart TD
   its headers and answer payload, while structured logs retain the same identifier.
 - **Overload protection:** bounded inference concurrency rejects excess work with HTTP 503 and `Retry-After` instead of allowing unbounded queue growth.
 - **Measured optimization:** a bounded TTL response cache and single-flight request coalescing report hit/miss/coalesced/bypass metrics while avoiding repeat retrieval, generation, token usage, and provider cost.
+- **Deadline-safe provider retries:** transient attempts, backoff, and streamed responses share one monotonic request budget, so retries cannot silently multiply the configured timeout.
 - **Deployment path:** a non-root Docker image with liveness checks and a credential-free mock mode for CI.
 - **Reproducible evaluation:** a checked-in 100-question benchmark, multi-reference scoring, focused tests, and container smoke checks in GitHub Actions.
 - **Retrieval quality gates:** comparable Hit Rate, Recall, MRR, and nDCG reports can fail CI when a measured retriever regresses.

@@ -40,6 +40,17 @@ def _provider_response(
     return response
 
 
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
 @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
 @patch("llm.time.sleep")
 @patch("llm.requests.post")
@@ -54,6 +65,7 @@ def test_provider_retries_transient_status_then_succeeds(mock_post, mock_sleep):
     assert call_llm("question") == "Recovered"
     assert mock_post.call_count == 2
     unavailable.close.assert_called_once()
+    success.close.assert_called_once()
     mock_sleep.assert_called_once_with(0.25)
 
 
@@ -77,6 +89,7 @@ def test_provider_retry_honors_bounded_retry_after(mock_post, mock_sleep):
     assert result.content == "Recovered"
     assert result.total_tokens == 5
     assert mock_post.call_count == 2
+    success.close.assert_called_once()
     mock_sleep.assert_called_once_with(5.0)
 
 
@@ -107,7 +120,7 @@ def test_provider_stops_after_bounded_transient_attempts(mock_post, mock_sleep):
     assert [call.args[0] for call in mock_sleep.call_args_list] == [0.25, 0.5]
     responses[0].close.assert_called_once()
     responses[1].close.assert_called_once()
-    responses[2].close.assert_not_called()
+    responses[2].close.assert_called_once()
 
 
 @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
@@ -123,6 +136,105 @@ def test_provider_does_not_replay_failed_stream(mock_post, mock_sleep):
 
     mock_post.assert_called_once()
     mock_sleep.assert_not_called()
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.time.monotonic")
+@patch("llm.requests.post")
+def test_provider_retries_share_one_deadline(
+    mock_post,
+    mock_monotonic,
+    mock_sleep,
+):
+    clock = FakeClock()
+    mock_monotonic.side_effect = clock
+    mock_sleep.side_effect = clock.advance
+    unavailable = _provider_response(503)
+    success = _provider_response(
+        200,
+        payload={"choices": [{"message": {"content": "Recovered"}}]},
+    )
+    mock_post.side_effect = [unavailable, success]
+
+    assert call_llm("question", timeout=1.0) == "Recovered"
+
+    first_timeout = mock_post.call_args_list[0].kwargs["timeout"]
+    second_timeout = mock_post.call_args_list[1].kwargs["timeout"]
+    assert first_timeout == pytest.approx(1.0)
+    assert second_timeout == pytest.approx(0.75)
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.sleep")
+@patch("llm.time.monotonic")
+@patch("llm.requests.post")
+def test_provider_stops_before_retry_that_cannot_fit_deadline(
+    mock_post,
+    mock_monotonic,
+    mock_sleep,
+):
+    clock = FakeClock()
+    mock_monotonic.side_effect = clock
+    unavailable = _provider_response(503)
+
+    def slow_failure(*args, **kwargs):
+        clock.advance(0.9)
+        return unavailable
+
+    mock_post.side_effect = slow_failure
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        call_llm("question", timeout=1.0)
+
+    mock_post.assert_called_once()
+    mock_sleep.assert_not_called()
+    unavailable.close.assert_called_once()
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@patch("llm.time.monotonic")
+@patch("llm.requests.post")
+def test_streaming_response_cannot_outlive_shared_deadline(mock_post, mock_monotonic):
+    clock = FakeClock()
+    mock_monotonic.side_effect = clock
+    response = _provider_response(
+        200,
+        stream_lines=[
+            'data: {"choices":[{"delta":{"content":"first"}}]}',
+            'data: {"choices":[{"delta":{"content":"late"}}]}',
+        ],
+    )
+
+    def stream_lines(*args, **kwargs):
+        yield response.iter_lines.return_value[0]
+        clock.advance(1.1)
+        yield response.iter_lines.return_value[1]
+
+    response.iter_lines.side_effect = stream_lines
+    mock_post.return_value = response
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        call_llm_with_metrics("question", timeout=1.0)
+
+    mock_post.assert_called_once()
+    response.close.assert_called_once()
+
+
+@patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+@pytest.mark.parametrize(
+    ("timeout", "error_type"),
+    [
+        (0, ValueError),
+        (-1, ValueError),
+        (float("inf"), ValueError),
+        (float("nan"), ValueError),
+        (True, TypeError),
+    ],
+)
+def test_provider_rejects_invalid_deadline(timeout, error_type):
+    with pytest.raises(error_type, match="finite positive"):
+        call_llm("question", timeout=timeout)
 
 
 # --- format_context ---
